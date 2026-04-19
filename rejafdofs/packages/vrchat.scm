@@ -20,6 +20,7 @@
 
 (define-module (rejafdofs packages vrchat)
   #:use-module (guix packages)
+  #:use-module (guix gexp)
   #:use-module (guix git-download)
   #:use-module (guix build-system cargo)
   #:use-module ((guix licenses) #:prefix license:)
@@ -44,8 +45,14 @@
     (build-system cargo-build-system)
     (arguments
      (list
-      ;; Cargo workspace の内、CLI 本体である `vrc-get` クレートのみをビルド。
-      #:cargo-package-crates #~'("vrc-get")
+      ;; 本家 Guix (2025 以降の新 Rust 方式) を使う場合は、下記を有効化して
+      ;; Cargo workspace 内の CLI クレートだけをビルド対象にしてください:
+      ;;
+      ;;   #:cargo-package-crates #~'("vrc-get")
+      ;;
+      ;; Guix 1.4 系ではこのキーワードが未サポートです。その場合は
+      ;; cargo-build-system のデフォルト挙動 (workspace の default-members を
+      ;; すべてビルド) を使うか、snippet で vrc-get 以外を削除してください。
       #:install-source? #f
       #:tests? #f))
     (native-inputs
