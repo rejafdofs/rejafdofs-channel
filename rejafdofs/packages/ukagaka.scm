@@ -26,6 +26,7 @@
 
 (define-module (rejafdofs packages ukagaka)
   #:use-module (guix packages)
+  #:use-module (guix gexp)
   #:use-module (guix git-download)
   #:use-module (guix build-system ruby)
   #:use-module (guix build-system copy)
