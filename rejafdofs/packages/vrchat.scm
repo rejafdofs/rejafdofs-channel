@@ -39,9 +39,8 @@
              (url "https://github.com/vrc-get/vrc-get")
              (commit (string-append "v" version))))
        (file-name (git-file-name name version))
-       ;; TODO: 初回ビルド時に `guix hash -rx <checkout>` で取得した値に差し替え。
        (sha256
-        (base32 "0000000000000000000000000000000000000000000000000000"))))
+        (base32 "0gwkwb1dikdqghigbh98hpkq7wnvxljszw1208if311w2bv70pm5"))))
     (build-system cargo-build-system)
     (arguments
      (list

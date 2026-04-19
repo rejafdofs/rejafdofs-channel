@@ -39,9 +39,11 @@
 ;;;
 
 (define-public ruby-ninix-fmo
+  ;; v1.0.1 tag は .gemspec 追加前なので、gemspec を含む v1.0.2 を使用。
+  ;; gemspec 内部の spec.version は "1.0.1" のまま。
   (package
     (name "ruby-ninix-fmo")
-    (version "1.0.1")
+    (version "1.0.2")
     (source
      (origin
        (method git-fetch)
@@ -49,12 +51,24 @@
              (url "https://github.com/Tatakinov/ninix-fmo")
              (commit (string-append "v" version))))
        (file-name (git-file-name name version))
-       ;; TODO: 初回ビルド時に `guix hash -rx <checkout>` で差し替え。
        (sha256
-        (base32 "0000000000000000000000000000000000000000000000000000"))))
+        (base32 "044a2h1b39lajyvdy5dlakg33pc1773j8fbs8b10blcq3cb94x6h"))))
     (build-system ruby-build-system)
     (arguments
-     (list #:tests? #f))
+     ;; gemspec が required_ruby_version = ">= 3.1.0" を指定するため、
+     ;; デフォルトの ruby@2.7 ではなく ruby@3.1 を使用する。
+     (list
+      #:tests? #f
+      #:ruby ruby-3.1
+      #:phases
+      #~(modify-phases %standard-phases
+          ;; glibc < 2.34 では shm_open / sem_* が librt に属するため、
+          ;; extconf.rb に have_library('rt') を追加する。
+          (add-after 'unpack 'link-librt
+            (lambda _
+              (substitute* "ext/ninix-fmo/extconf.rb"
+                (("require 'mkmf'")
+                 "require 'mkmf'\nhave_library('rt')\nhave_library('pthread')")))))))
     (synopsis "ninix-kagari 用 FileMappingObject Ruby gem")
     (description
      "ninix-fmo は Windows の FileMappingObject と互換な IPC 機構を
@@ -81,9 +95,8 @@ ninix-kagari に提供する Ruby の C 拡張 gem。")
              (commit (string-append "v" version))
              (recursive? #t)))           ;SHIORI サブモジュール参照のため
        (file-name (git-file-name name version))
-       ;; TODO: 初回ビルド時に `guix hash -rx <checkout>` で差し替え。
        (sha256
-        (base32 "0000000000000000000000000000000000000000000000000000"))))
+        (base32 "0zq9953jq94mibcgw2zh31pzgr3mxzvig0rq9ilx76gzr90c0kap"))))
     (build-system copy-build-system)
     (arguments
      (list
