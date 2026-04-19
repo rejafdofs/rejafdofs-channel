@@ -52,7 +52,10 @@
     (build-system gnu-build-system)
     (arguments
      `(#:make-flags
-       (list "nyxt"
+       ;; NYXT_SUBMODULES=false: release tarball には _build/ 以下に
+       ;; submodule が同梱されているため、makefile が git submodule
+       ;; update を呼ぼうとして失敗する (ビルドコンテナに git が無い) のを防ぐ。
+       (list "nyxt" "NYXT_SUBMODULES=false"
              (string-append "DESTDIR=" (assoc-ref %outputs "out"))
              "PREFIX=")
        #:strip-binaries? #f             ;stripping breaks SBCL binaries
