@@ -49,6 +49,15 @@
        #:phases
        (modify-phases %standard-phases
          (delete 'configure)
+         ;; 新しい SBCL (2.5.x) は未使用レキシカル変数を style-warning で報告し、
+         ;; nasdf:fail-on-warnings がそれをエラー化してビルドを落とす。
+         ;; (ソース: libraries/nasdf/tests.lisp)
+         ;; style-warning は無視するよう patch する。
+         (add-after 'unpack 'relax-fail-on-warnings
+           (lambda _
+             (substitute* "libraries/nasdf/tests.lisp"
+               (("\\(unless \\(or \\(redefinition-p c\\)")
+                "(unless (or (redefinition-p c) (typep c 'style-warning)"))))
          (add-before 'build 'fix-common-lisp-cache-folder
            (lambda _ (setenv "HOME" "/tmp")))
          (add-before 'check 'configure-tests
