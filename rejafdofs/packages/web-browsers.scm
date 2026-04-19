@@ -1,22 +1,23 @@
 ;;; rejafdofs channel --- Web browsers.
 ;;;
-;;; Nyxt: Common Lisp 製の拡張可能ウェブブラウザ。
+;;; Nyxt: Common Lisp 製の拡張可能ウェブブラウザ (BSD-3)。
 ;;;
-;;; 本家 Guix では 2026-01-13 のコミット 16838140fe で nyxt が削除された
-;;; (guix/guix#518) ため、本チャンネルで独自にパッケージ化する。
+;;; 本家 Guix は 2026-01-13 のコミット 16838140fe で nyxt を削除したため、
+;;; 本チャンネルで独自にパッケージ化する。
 ;;;
-;;; 3.12.0 からは nixpkgs のパッケージ定義を参考にし、**上流公式リリースの
-;;; "source-with-submodules" tarball** を使用する構成に切り替えた。
-;;; この tarball には Nyxt が依存する Common Lisp ライブラリ群が _build/
-;;; サブディレクトリ以下に submodule として同梱されているため、個別に
-;;; sbcl-* パッケージを入力として指定する必要がない (旧 3.11.7 定義では
-;;; 50 個以上の sbcl-* 依存を Guix 側で用意する必要があった)。
+;;; 3.12.0 から upstream は公式リリース tarball
+;;;   nyxt-X.Y.Z-source-with-submodules.tar.xz
+;;; を配布しており、Common Lisp 依存は _build/ サブディレクトリに
+;;; submodule として同梱される。個別に sbcl-* を用意する必要はない。
 ;;;
-;;; ビルド時は CL_SOURCE_REGISTRY で _build/ 以下を SBCL に教えることで、
-;;; 同梱された依存のみでセルフコンパイルさせる。
+;;; 本定義は **upstream 同梱の guix.scm** (atlas-engineer/nyxt の
+;;; リポジトリ直下) をベースにリリース tarball 用に改変したもの。
+;;; upstream の guix.scm は _build/ 以下の各 .lisp にハードコードされた
+;;; 共有ライブラリ名 (例 "libgobject-2.0.so") を substitute* で
+;;; Guix store 上の絶対パスに書き換える処理が完備しているので、
+;;; そのまま踏襲する。
 ;;;
-;;; 上流: https://github.com/atlas-engineer/nyxt (BSD-3)
-;;; 参考: https://github.com/NixOS/nixpkgs ... pkgs/applications/networking/browsers/nyxt/default.nix
+;;; 上流: https://github.com/atlas-engineer/nyxt
 
 (define-module (rejafdofs packages web-browsers)
   #:use-module (guix packages)
@@ -24,16 +25,13 @@
   #:use-module (guix download)
   #:use-module (guix build-system gnu)
   #:use-module ((guix licenses) #:prefix license:)
-  #:use-module (gnu packages bash)
   #:use-module (gnu packages c)
-  #:use-module (gnu packages freedesktop)
   #:use-module (gnu packages glib)
   #:use-module (gnu packages gnome)
   #:use-module (gnu packages gstreamer)
   #:use-module (gnu packages gtk)
   #:use-module (gnu packages lisp)
   #:use-module (gnu packages pkg-config)
-  #:use-module (rejafdofs packages lisp-overrides)
   #:use-module (gnu packages sqlite)
   #:use-module (gnu packages tls)
   #:use-module (gnu packages webkit)
@@ -53,123 +51,134 @@
         (base32 "0m55r5dl8l72v8bdbg519ac6xq3z8pcb25p0p0q52l16rkqgcmck"))))
     (build-system gnu-build-system)
     (arguments
-     (list
-      #:make-flags
-      #~(list "all" "NYXT_SUBMODULES=false"
-              ;; 論理パスネーム機構は SBCL 2.5.8 の globaldb / save-lisp-and-die
-              ;; と相性が悪く -1 is not of type (UNSIGNED-BYTE 44) で落ちる
-              ;; ことがあるため無効化。
-              "NASDF_USE_LOGICAL_PATHS=false"
-              (string-append "DESTDIR=" #$output)
-              "PREFIX=")
-      #:strip-binaries? #f           ;stripping breaks SBCL binaries
-      ;; SBCL 2.5.8 の tune-image-for-dump は並列コンパイルとの
-      ;; 組み合わせで内部状態が壊れて "-1 is not of type
-      ;; (UNSIGNED-BYTE 44)" を出す既知の issue があるので直列化。
-      #:parallel-build? #f
-      #:phases
-      #~(modify-phases %standard-phases
-          (delete 'configure)
-          ;; tarball はトップレベルに `source/`, `_build/`, `libraries/`, `makefile`
-          ;; などを並列に持つ (単一ラッパーディレクトリが無い) ため、Guix の
-          ;; unpack フェーズが誤って `source/` 内に cd する。1 階層上に戻す。
-          (add-after 'unpack 'chdir-to-tarball-root
-            (lambda _
-              (when (file-exists? "../libraries")
-                (chdir ".."))))
-          ;; 新しい SBCL (2.5.8+) は未使用レキシカル変数を style-warning で
-          ;; 報告するようになり、nasdf:fail-on-warnings がそれをエラー化して
-          ;; ビルドを落とす。libraries/nasdf/tests.lisp のフィルタに
-          ;; (typep c 'style-warning) を追加する。
-          (add-after 'chdir-to-tarball-root 'relax-fail-on-warnings
-            (lambda _
-              (substitute* "libraries/nasdf/tests.lisp"
-                (("\\(unless \\(or \\(redefinition-p c\\)")
-                 "(unless (or (redefinition-p c) (typep c 'style-warning)"))))
-          (add-before 'build 'set-lisp-environment
-            (lambda* (#:key inputs #:allow-other-keys)
-              ;; 同梱 submodules を SBCL から見えるようにする。
-              (setenv "CL_SOURCE_REGISTRY"
-                      (string-append (getcwd) "/_build//"))
-              (setenv "ASDF_OUTPUT_TRANSLATIONS"
-                      (string-append (getcwd) ":" (getcwd)))
-              ;; SBCL キャッシュディレクトリ用。
-              (setenv "HOME" "/tmp")
-              ;; nyxt/nasdf は CFFI 経由で libgobject / libgtk 等を dlopen
-              ;; するので、ビルド時にも LD_LIBRARY_PATH を通しておく。
-              (setenv "LD_LIBRARY_PATH"
-                      (string-join
-                       (map (lambda (i)
-                              (string-append (assoc-ref inputs i) "/lib"))
-                            '("glib" "gobject-introspection"
-                              "gdk-pixbuf" "cairo" "pango" "gtk+"
-                              "webkitgtk-for-gtk3" "openssl" "sqlite"
-                              "libfixposix"))
-                       ":"))))
-          (add-before 'check 'configure-tests
-            (lambda _ (setenv "NYXT_TESTS_NO_NETWORK" "1")))
-          (add-after 'install 'wrap-program
-            (lambda* (#:key inputs outputs #:allow-other-keys)
-              (let* ((bin (string-append #$output "/bin/nyxt"))
-                     (glib-networking (assoc-ref inputs "glib-networking"))
-                     (gsettings (assoc-ref inputs "gsettings-desktop-schemas"))
-                     (xdg (assoc-ref inputs "xdg-utils"))
-                     (xclip (assoc-ref inputs "xclip"))
-                     (wl-clip (assoc-ref inputs "wl-clipboard"))
-                     (gi-path (getenv "GI_TYPELIB_PATH"))
-                     (ld-libs
-                      (string-join
-                       (map (lambda (i)
-                              (string-append (assoc-ref inputs i) "/lib"))
-                            '("glib" "gobject-introspection"
-                              "gdk-pixbuf" "cairo" "pango" "gtk+"
-                              "webkitgtk-for-gtk3" "openssl" "sqlite"
-                              "libfixposix"))
-                       ":")))
-                (wrap-program bin
-                  `("GIO_EXTRA_MODULES" prefix
-                    (,(string-append glib-networking "/lib/gio/modules")))
-                  `("GI_TYPELIB_PATH" prefix (,gi-path))
-                  `("LD_LIBRARY_PATH" ":" prefix (,ld-libs))
-                  `("XDG_DATA_DIRS" ":" prefix
-                    (,(string-append gsettings "/share")))
-                  `("PATH" ":" prefix
-                    (,(string-join
-                       (map (lambda (p) (string-append p "/bin"))
-                            (list xdg xclip wl-clip))
-                       ":"))))))))))
-    (native-inputs
-     ;; 本家の sbcl (2.5.8) は Nyxt 3.12.0 の save-lisp-and-die で
-     ;; GC regression を踏むため、本チャンネルで定義する 2.6.1 を使う。
-     (list sbcl-2.6 pkg-config))
-    (inputs
-     (list bash-minimal
-           libfixposix
-           ;; GLib / GObject
-           glib
-           gobject-introspection
-           glib-networking
-           gsettings-desktop-schemas
-           ;; GTK and friends
-           gdk-pixbuf
-           cairo
-           pango
-           gtk+                     ;GTK 3 (main loop)
-           webkitgtk-for-gtk3
-           ;; Misc
-           openssl
-           sqlite
-           ;; GStreamer (video playback)
-           gstreamer
-           gst-libav
-           gst-plugins-base
-           gst-plugins-good
-           gst-plugins-bad
-           gst-plugins-ugly
-           ;; Runtime helpers for clipboard / open-in-browser
-           xdg-utils
-           xclip
-           wl-clipboard))
+     `(#:make-flags
+       (list "nyxt"
+             (string-append "DESTDIR=" (assoc-ref %outputs "out"))
+             "PREFIX=")
+       #:strip-binaries? #f             ;stripping breaks SBCL binaries
+       #:phases
+       (modify-phases %standard-phases
+         (delete 'configure)
+         ;; tarball はトップレベルに source/ / _build/ / libraries/ / makefile
+         ;; などを並列に持つ (単一ラッパーディレクトリが無い) ため、Guix の
+         ;; unpack フェーズが誤って source/ 内に cd する。1 階層上に戻す。
+         (add-after 'unpack 'chdir-to-tarball-root
+           (lambda _
+             (when (file-exists? "../libraries")
+               (chdir ".."))))
+         ;; 新しい SBCL は未使用レキシカル変数を style-warning で報告し、
+         ;; nasdf:fail-on-warnings がそれをエラー化するので緩和。
+         (add-after 'chdir-to-tarball-root 'relax-fail-on-warnings
+           (lambda _
+             (substitute* "libraries/nasdf/tests.lisp"
+               (("\\(unless \\(or \\(redefinition-p c\\)")
+                "(unless (or (redefinition-p c) (typep c 'style-warning)"))))
+         ;; upstream の guix.scm をそのまま踏襲: 同梱 _build/ 内の各
+         ;; .lisp にハードコードされた共有ライブラリ名を Guix store 上の
+         ;; 絶対パスに書き換える。これにより実行時の LD_LIBRARY_PATH
+         ;; 設定が最小限で済む。
+         (add-after 'unpack 'fix-so-paths
+           (lambda* (#:key inputs #:allow-other-keys)
+             (substitute* "_build/cl-plus-ssl/src/reload.lisp"
+               (("libssl.so" all)
+                (string-append (assoc-ref inputs "openssl") "/lib/" all))
+               (("libcrypto.so" all)
+                (string-append (assoc-ref inputs "openssl") "/lib/" all)))
+             (substitute* "_build/iolib/src/syscalls/ffi-functions-unix.lisp"
+               (("\\(:default \"libfixposix\"\\)")
+                (string-append "(:default \""
+                               (assoc-ref inputs "libfixposix")
+                               "/lib/libfixposix\")")))
+             (substitute* "_build/cl-sqlite/sqlite-ffi.lisp"
+               (("libsqlite3" all)
+                (string-append (assoc-ref inputs "sqlite") "/lib/" all)))
+             (substitute* "_build/cl-gobject-introspection/src/init.lisp"
+               (("libgobject-2\\.0\\.so")
+                (search-input-file inputs "/lib/libgobject-2.0.so"))
+               (("libgirepository-1\\.0\\.so")
+                (search-input-file inputs "/lib/libgirepository-1.0.so")))
+             (substitute* "_build/cl-webkit/webkit2/webkit2.init.lisp"
+               (("libwebkit2gtk" all)
+                (string-append (assoc-ref inputs "webkitgtk-for-gtk3")
+                               "/lib/" all)))
+             (substitute* "_build/cl-cffi-gtk/glib/glib.init.lisp"
+               (("libglib-[0-9.]*\\.so" all)
+                (search-input-file inputs (string-append "/lib/" all)))
+               (("libgthread-[0-9.]*\\.so" all)
+                (search-input-file inputs (string-append "/lib/" all))))
+             (substitute* "_build/cl-cffi-gtk/gobject/gobject.init.lisp"
+               (("libgobject-[0-9.]*\\.so" all)
+                (search-input-file inputs (string-append "/lib/" all))))
+             (substitute* "_build/cl-cffi-gtk/gio/gio.init.lisp"
+               (("libgio-[0-9.]*\\.so" all)
+                (search-input-file inputs (string-append "/lib/" all))))
+             (substitute* "_build/cl-cffi-gtk/cairo/cairo.init.lisp"
+               (("libcairo\\.so" all)
+                (search-input-file inputs (string-append "/lib/" all))))
+             (substitute* "_build/cl-cffi-gtk/pango/pango.init.lisp"
+               (("libpango-[0-9.]*\\.so" all)
+                (search-input-file inputs (string-append "/lib/" all)))
+               (("libpangocairo-[0-9.]*\\.so" all)
+                (search-input-file inputs (string-append "/lib/" all))))
+             (substitute* "_build/cl-cffi-gtk/gdk-pixbuf/gdk-pixbuf.init.lisp"
+               (("libgdk_pixbuf-[0-9.]*\\.so" all)
+                (search-input-file inputs (string-append "/lib/" all))))
+             (substitute* "_build/cl-cffi-gtk/gdk/gdk.init.lisp"
+               (("libgdk-[0-9]\\.so" all)
+                (search-input-file inputs (string-append "/lib/" all))))
+             (substitute* "_build/cl-cffi-gtk/gdk/gdk.package.lisp"
+               (("libgtk-[0-9]\\.so" all)
+                (search-input-file inputs (string-append "/lib/" all))))))
+         (add-after 'fix-so-paths 'fix-clipboard-paths
+           (lambda* (#:key inputs #:allow-other-keys)
+             (substitute* "_build/trivial-clipboard/src/text.lisp"
+               (("\"xsel\"")
+                (string-append "\"" (assoc-ref inputs "xsel") "/bin/xsel\""))
+               (("\"wl-copy\"")
+                (string-append "\"" (assoc-ref inputs "wl-clipboard")
+                               "/bin/wl-copy\""))
+               (("\"wl-paste\"")
+                (string-append "\"" (assoc-ref inputs "wl-clipboard")
+                               "/bin/wl-paste\"")))))
+         (add-before 'build 'fix-common-lisp-cache-folder
+           (lambda _ (setenv "HOME" "/tmp")))
+         (add-before 'check 'configure-tests
+           (lambda _ (setenv "NASDF_TESTS_NO_NETWORK" "1")))
+         (add-after 'install 'wrap-program
+           (lambda* (#:key inputs outputs #:allow-other-keys)
+             (let ((gsettings (assoc-ref inputs "gsettings-desktop-schemas")))
+               (wrap-program (string-append (assoc-ref outputs "out")
+                                            "/bin/nyxt")
+                 `("GIO_EXTRA_MODULES" prefix
+                   (,(string-append (assoc-ref inputs "glib-networking")
+                                    "/lib/gio/modules")))
+                 `("GI_TYPELIB_PATH" prefix
+                   (,(getenv "GI_TYPELIB_PATH")))
+                 `("LD_LIBRARY_PATH" ":" prefix
+                   (,(string-append gsettings "/lib")))
+                 `("XDG_DATA_DIRS" ":" prefix
+                   (,(string-append gsettings "/share"))))))))))
+    (native-inputs (list sbcl))
+    (inputs (list cairo
+                  gdk-pixbuf
+                  glib
+                  glib-networking
+                  gobject-introspection
+                  gsettings-desktop-schemas
+                  gst-libav
+                  gst-plugins-bad
+                  gst-plugins-base
+                  gst-plugins-good
+                  gst-plugins-ugly
+                  gtk+
+                  libfixposix
+                  openssl
+                  pango
+                  pkg-config
+                  sqlite
+                  webkitgtk-for-gtk3
+                  wl-clipboard
+                  xsel))
     (synopsis "Extensible web-browser in Common Lisp")
     (home-page "https://nyxt-browser.com/")
     (description "Nyxt is a keyboard-oriented, extensible web-browser designed
