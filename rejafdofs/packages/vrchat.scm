@@ -38,7 +38,10 @@
       #:install-source? #f
       #:tests? #f
       ;; Cargo workspace の内、CLI クレート `vrc-get` のみをビルド。
-      #:cargo-package-crates ''("vrc-get")))
+      #:cargo-package-crates ''("vrc-get")
+      ;; `cargo install` は workspace root だと virtual manifest を
+      ;; 受け付けないため、CLI 本体のサブディレクトリを明示。
+      #:cargo-install-paths ''("vrc-get")))
     (native-inputs
      (list pkg-config))
     (inputs
