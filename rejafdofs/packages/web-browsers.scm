@@ -76,8 +76,8 @@
          ;; upstream の guix.scm をそのまま踏襲: 同梱 _build/ 内の各
          ;; .lisp にハードコードされた共有ライブラリ名を Guix store 上の
          ;; 絶対パスに書き換える。これにより実行時の LD_LIBRARY_PATH
-         ;; 設定が最小限で済む。
-         (add-after 'unpack 'fix-so-paths
+         ;; 設定が最小限で済む。chdir-to-tarball-root 後に実行する必要あり。
+         (add-after 'relax-fail-on-warnings 'fix-so-paths
            (lambda* (#:key inputs #:allow-other-keys)
              (substitute* "_build/cl-plus-ssl/src/reload.lisp"
                (("libssl.so" all)
