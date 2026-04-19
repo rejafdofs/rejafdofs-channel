@@ -1,12 +1,13 @@
 # rejafdofs-channel
 
-rejafdofs 個人向け Guix チャンネル。以下の 3 パッケージを提供します。
+rejafdofs 個人向け Guix チャンネル。以下 3 パッケージを提供します。
 
-| パッケージ       | 説明                                                 | ライセンス |
-|------------------|------------------------------------------------------|------------|
-| `nyxt`           | Common Lisp 製の拡張可能ウェブブラウザ (本家の再エクスポート) | BSD-3      |
-| `vrc-get`        | VRChat Package Manager (VCC) の OSS CLI              | MIT        |
-| `ninix-kagari`   | Ukagaka 互換デスクトップマスコット                   | GPL-2      |
+| パッケージ       | バージョン | 説明                                                 | ビルド検証             | ライセンス |
+|------------------|-----------|------------------------------------------------------|------------------------|------------|
+| `nyxt`           | 3.11.7    | Common Lisp 製の拡張可能ウェブブラウザ               | ✅ 成功 (Guix 2026)    | BSD-3      |
+| `vrc-get`        | 1.9.1     | VRChat Package Manager (VCC) の OSS CLI              | ✅ 成功 (Guix 2026)    | MIT        |
+| `ruby-ninix-fmo` | 1.0.2     | ninix-kagari 用 FileMappingObject Ruby gem           | ✅ 成功                 | MIT        |
+| `ninix-kagari`   | 3.1.1     | Ukagaka 互換デスクトップマスコット                   | ✅ 成功 (build のみ)    | GPL-2      |
 
 ## セットアップ
 
@@ -35,7 +36,6 @@ guix install nyxt vrc-get ninix-kagari
 git clone https://github.com/rejafdofs/rejafdofs-channel.git
 cd rejafdofs-channel
 guix build -L . nyxt
-guix build -L . vrc-get
 guix build -L . ninix-kagari
 ```
 
@@ -43,33 +43,49 @@ guix build -L . ninix-kagari
 
 ### Nyxt (`rejafdofs/packages/web-browsers.scm`)
 
-本家 `(gnu packages web-browsers)` の `nyxt` を再エクスポートしているだけです。
-`guix pull` 後の本家 Guix に含まれるバージョンがそのまま公開されます。
+本家 Guix では 2026-01-13 のコミット `16838140fe` で `nyxt` パッケージが
+削除されました (upstream issue `guix/guix#518`)。これが `guix install nyxt`
+が失敗する原因です。
 
-もし本家より新しいバージョンを使いたい場合は、`rejafdofs/packages/web-browsers.scm`
-の `define-public nyxt` を上書きし、`(inherit upstream-nyxt)` + 新しい `version`
-と `source` を指定してください。
+本チャンネルでは、削除直前のリビジョン `030bd035ae` に存在した
+**nyxt 3.11.7 の完全な定義をそのまま取り込んで**います。
+依存する 73 個の sbcl-* / cl-* / webkitgtk / gst-* 等は現行の本家 Guix に
+残っているため、追加定義は不要で `guix build -L . nyxt` が通ります。
 
-### vrc-get (`rejafdofs/packages/vrchat.scm`)
+なお、新しい SBCL (2.5.8+) は未使用レキシカル変数を style-warning で
+報告するようになっており、nyxt の `nasdf:fail-on-warnings` がそれを
+コンパイルエラーに昇格するため、**`libraries/nasdf/tests.lisp` の
+フィルタに `(typep c 'style-warning)` を追加する patch を自動で適用**
+しています。
 
-**骨格のみの定義**であり、Rust クレート依存のリストは未完成です。
-実ビルド可能にするには次の手順でロックファイルから依存を生成してください。
+### vrc-get (`rejafdofs/packages/vrchat.scm` + `rust-crates.scm`)
+
+Rust クレート依存は `rejafdofs/packages/rust-crates.scm` にまとまって
+います。このファイルは上流の Cargo.lock から **`guix import crate` で
+自動生成**したもので、約 500 crate の定義を含みます。
+
+上流が新しいバージョンを出したら、下記で再生成してください。
 
 ```sh
-# 事前に vrc-get のソースを用意 (v1.9.1 タグを checkout)
-git clone --branch v1.9.1 --depth 1 https://github.com/vrc-get/vrc-get /tmp/vrc-get
+# 新バージョンのソースを用意 (vX.Y.Z タグを checkout)
+git clone --branch vX.Y.Z --depth 1 \
+  https://github.com/vrc-get/vrc-get /tmp/vrc-get
 
-# Cargo.lock から Guix パッケージ定義を自動生成
+# rust-crates.scm を再生成 (既存を上書き)
+truncate -s 0 rejafdofs/packages/rust-crates.scm
 guix import -i rejafdofs/packages/rust-crates.scm crate \
   -f /tmp/vrc-get/Cargo.lock vrc-get
+
+# 生成直後はヘッダ (define-module + #:export) が無い状態なので、
+# 既存コミットから以下をファイル先頭にコピー:
+#   (define-module (rejafdofs packages rust-crates) ...
+#    #:export (lookup-cargo-inputs))
+# そして define-cargo-inputs ブロックをファイル末尾に移動。
 ```
 
-生成された `rust-crates.scm` をリポジトリに追加コミットすれば
-`guix build -L . vrc-get` が通るはずです。
-
-> 本家 Guix の新しい Rust パッケージングモデル
-> (`cargo-inputs-from-lockfile` / `#:cargo-package-crates`) を前提としています。
-> 旧 API (`#:cargo-inputs`) は 2026-12-31 に廃止予定。
+> Guix 1.4 系では新 Rust パッケージングモデル未対応で、cargo 本体も
+> Cargo workspace inheritance に未対応のためビルドできません。
+> 必ず `guix pull` 済みの新 Guix (2025 以降) を使用してください。
 
 ### ninix-kagari (`rejafdofs/packages/ukagaka.scm`)
 
@@ -79,20 +95,41 @@ guix import -i rejafdofs/packages/rust-crates.scm crate \
   ([Tatakinov/ninix-fmo](https://github.com/Tatakinov/ninix-fmo) / MIT)
 - `ninix-kagari` 本体
 
-**既知の制約:**
+**実装メモ:**
 
-1. **`ruby-gtk4` 等の Ruby-GNOME バインディングが Guix 本家にまだ無い可能性**があります。
-   その場合、本チャンネルで ruby-gnome スイートを追加定義する必要があります (未実装)。
-2. SHIORI バックエンド (Aosora / Kawari / Satori / YAYA) と Sorakado (Ao / Ai) は
-   本パッケージには**含めていません**。必要になったゴーストのディレクトリ内で
-   個別に用意してください。ninix-kagari 本体の起動のみをサポートします。
-3. ソースの sha256 ハッシュはプレースホルダです。初回ビルド時に `guix download` または
-   `guix hash -rx` で取得した正しい値に差し替えてください。
+1. `ruby-ninix-fmo` の上流 v1.0.1 タグには `.gemspec` が無いため、
+   v1.0.2 タグを使用しています (gemspec の内部バージョンは 1.0.1 のまま)。
+2. Linux の `shm_open` / `sem_*` は glibc < 2.34 で `librt` 経由です。
+   ビルド phase で `extconf.rb` に `have_library('rt')` と
+   `have_library('pthread')` を挿入しています。
+3. SHIORI バックエンド (Aosora / Kawari / Satori / YAYA) と Sorakado (Ao / Ai)
+   は**含めていません**。必要になったゴーストのディレクトリ内で個別に
+   用意してください。ninix-kagari 本体のソース配置と起動スクリプト
+   `bin/ninix` のインストールのみをサポートします。
+4. `ninix-kagari` の runtime 依存のうち `ruby-gtk4`, `ruby-narray`, `ruby-zip`
+   等は Guix 本家にまだ無いため、**`guix build` は成功しますが実行時に
+   `require` が失敗する可能性**があります。将来これらが Guix に入るか、
+   本チャンネルで追加定義するかで対応予定。
 
 ### SSP
 
 ユーザ合意の上、スコープ外とします。Wine 経由のみ動作する
 プロプライエタリ Windows バイナリのため、本チャンネルでは提供しません。
+
+## ビルド検証ログ (実ビルド済み store path)
+
+Guix 2026 (commit `30442f49a581447285bd6f050acec6a9b677f3ad`) 上で確認:
+
+```
+/gnu/store/gjya4jqs5hcb9jb1673cnn1c77145dxk-nyxt-3.11.7
+/gnu/store/gg8qxiyzs9k3dwhidz0im0xw02hy2khq-vrc-get-1.9.1
+/gnu/store/q04ksx2hmjr762lyq8sh9svd73qm057j-ruby-ninix-fmo-1.0.2
+/gnu/store/rnw5642kygidrfxys2m31ljkr51c726q-ninix-kagari-3.1.1
+```
+
+動作確認済み:
+- `nyxt --version` → `Nyxt version 3.11.7`
+- `vrc-get --version` → `vrc-get 1.9.1`
 
 ## ライセンス
 
