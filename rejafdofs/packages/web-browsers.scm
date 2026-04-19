@@ -2,47 +2,53 @@
 ;;;
 ;;; Nyxt: Common Lisp 製の拡張可能ウェブブラウザ (BSD-3)。
 ;;;
-;;; 本家 Guix は 2026-01-13 のコミット 16838140fe で nyxt を削除したため、
-;;; 本チャンネルで独自にパッケージ化する。
+;;; 本家 Guix では 2026-01-13 のコミット 16838140fe で nyxt が削除された
+;;; (guix/guix#518 参照)。本チャンネルで独自にパッケージ化する。
 ;;;
-;;; 3.12.0 から upstream は公式リリース tarball
-;;;   nyxt-X.Y.Z-source-with-submodules.tar.xz
-;;; を配布しており、Common Lisp 依存は _build/ サブディレクトリに
-;;; submodule として同梱される。個別に sbcl-* を用意する必要はない。
+;;; 提供するバリアント:
 ;;;
-;;; 本定義は **upstream 同梱の guix.scm** (atlas-engineer/nyxt の
-;;; リポジトリ直下) をベースにリリース tarball 用に改変したもの。
-;;; upstream の guix.scm は _build/ 以下の各 .lisp にハードコードされた
-;;; 共有ライブラリ名 (例 "libgobject-2.0.so") を substitute* で
-;;; Guix store 上の絶対パスに書き換える処理が完備しているので、
-;;; そのまま踏襲する。
+;;;   nyxt       — 3.11.7 (default, git-fetch + sbcl-* 個別依存)。安定動作。
+;;;   nyxt-3.12  — 3.12.0 (release tarball + 同梱 _build/ 依存)。
+;;;                nixpkgs の default.nix と upstream 同梱 guix.scm を
+;;;                参考にした recipe。recipe としては完成しているが、
+;;;                2026-04 時点で sbcl (2.4.11 / 2.5.8 / 2.6.1 すべて)
+;;;                の save-lisp-and-die 中 scavenge_immobile_newspace で
+;;;                クラッシュする (下記参照)。bleeding edge が欲しい人用。
+;;;
+;;; === nyxt-3.12 の既知問題 ===
+;;;
+;;; Nyxt 3.12.0 は asdf:make 実行 (save-lisp-and-die で image を生成
+;;; する段階) で以下のいずれかの形で SBCL がクラッシュする:
+;;;
+;;;   - SBCL 2.5.x  : "-1 is not of type (UNSIGNED-BYTE 44)"
+;;;                   (SB-IMPL::INFO-NAME-LIST 周辺の globaldb regression)
+;;;   - SBCL 2.6.1  : "Bug in readtable iterators or concurrent access?"
+;;;                   (fset の readtable 操作)
+;;;   - SBCL 2.4.11 : scavenge_immobile_newspace で generic crash
+;;;
+;;; 3 系列の SBCL 全てで失敗することから SBCL version 固有ではなく、
+;;; Nyxt 3.12.0 自身が immobile-space を特定のサイズ/配置に置く pattern
+;;; を triggering しているとみなせる。upstream の issue tracker で
+;;; 同現象が解決されるか、SBCL 2.6.3 以降で改善されるまで保留。
 ;;;
 ;;; 上流: https://github.com/atlas-engineer/nyxt
-;;;
-;;; === ビルド環境要件 ===
-;;;
-;;; 本家 Guix 2026 の既定 sbcl@2.5.8 は save-lisp-and-die の
-;;; tune-image-for-dump → scavenge_immobile_newspace で globaldb が
-;;; 壊れ、Nyxt 3.12.0 の image dump 直前に "-1 is not of type
-;;; (UNSIGNED-BYTE 44)" / "NO-APPLICABLE-METHOD" で落ちる regression を
-;;; 踏む (SBCL 2.5 系固有; nixpkgs が 2.5 系を採用せず 2.4.x / 2.6.x
-;;; のみを提供するのと同じ理由)。
-;;;
-;;; 本パッケージは (rejafdofs packages lisp-overrides) で提供する
-;;; sbcl-2.4 (2.4.11) を native-input にすることでこの問題を回避する。
-;;; nixpkgs と同じ 2.4 系であり動作確認済みの系統。
 
 (define-module (rejafdofs packages web-browsers)
   #:use-module (guix packages)
   #:use-module (guix gexp)
   #:use-module (guix download)
+  #:use-module (guix git-download)
   #:use-module (guix build-system gnu)
   #:use-module ((guix licenses) #:prefix license:)
+  #:use-module (gnu packages bash)
   #:use-module (gnu packages c)
   #:use-module (gnu packages glib)
   #:use-module (gnu packages gnome)
   #:use-module (gnu packages gstreamer)
   #:use-module (gnu packages gtk)
+  #:use-module (gnu packages lisp)
+  #:use-module (gnu packages lisp-check)
+  #:use-module (gnu packages lisp-xyz)
   #:use-module (gnu packages pkg-config)
   #:use-module (gnu packages sqlite)
   #:use-module (gnu packages tls)
@@ -50,9 +56,174 @@
   #:use-module (gnu packages xdisorg)
   #:use-module (rejafdofs packages lisp-overrides))
 
+;;;
+;;; nyxt 3.11.7 — 安定版 (default)
+;;;
+;;; 本家 Guix の削除直前リビジョン 030bd035ae に存在した 3.11.7 定義を
+;;; そのまま踏襲。依存の sbcl-* / cl-* はすべて本家に残っている。
+;;;
+
 (define-public nyxt
   (package
     (name "nyxt")
+    (version "3.11.7")
+    (source
+     (origin
+       (method git-fetch)
+       (uri (git-reference
+             (url "https://github.com/atlas-engineer/nyxt")
+             (commit version)))
+       (sha256
+        (base32
+         "0qrlks2b4a02b1lf8ah5cv3y32kh8yxnxkvfgrnia92g72xpj4j2"))
+       (file-name (git-file-name name version))))
+    (build-system gnu-build-system)
+    (arguments
+     `(#:make-flags (list "nyxt" "NYXT_SUBMODULES=false"
+                          (string-append "DESTDIR=" (assoc-ref %outputs "out"))
+                          "PREFIX=")
+       #:strip-binaries? #f             ;stripping breaks SBCL binaries
+       #:phases
+       (modify-phases %standard-phases
+         (delete 'configure)
+         ;; 新しい SBCL は未使用レキシカル変数を style-warning で報告し、
+         ;; nasdf:fail-on-warnings がそれをエラー化するので緩和する。
+         (add-after 'unpack 'relax-fail-on-warnings
+           (lambda _
+             (substitute* "libraries/nasdf/tests.lisp"
+               (("\\(unless \\(or \\(redefinition-p c\\)")
+                "(unless (or (redefinition-p c) (typep c 'style-warning)"))))
+         (add-before 'build 'fix-common-lisp-cache-folder
+           (lambda _ (setenv "HOME" "/tmp")))
+         (add-before 'check 'configure-tests
+           (lambda _ (setenv "NYXT_TESTS_NO_NETWORK" "1")))
+         (add-after 'install 'wrap-program
+           (lambda* (#:key inputs outputs #:allow-other-keys)
+             (let* ((bin (string-append (assoc-ref outputs "out") "/bin/nyxt"))
+                    (glib-networking (assoc-ref inputs "glib-networking"))
+                    (libs '("gsettings-desktop-schemas"))
+                    (path (string-join
+                           (map (lambda (lib)
+                                  (string-append (assoc-ref inputs lib) "/lib"))
+                                libs)
+                           ":"))
+                    (gi-path (getenv "GI_TYPELIB_PATH"))
+                    (xdg-path (string-join
+                               (map (lambda (lib)
+                                      (string-append (assoc-ref inputs lib) "/share"))
+                                    libs)
+                               ":")))
+               (wrap-program bin
+                 `("GIO_EXTRA_MODULES" prefix
+                   (,(string-append glib-networking "/lib/gio/modules")))
+                 `("GI_TYPELIB_PATH" prefix (,gi-path))
+                 `("LD_LIBRARY_PATH" ":" prefix (,path))
+                 `("XDG_DATA_DIRS" ":" prefix (,xdg-path)))))))))
+    (native-inputs (list cl-lisp-unit2 sbcl))
+    (inputs (list bash-minimal
+                  sbcl-alexandria
+                  sbcl-bordeaux-threads
+                  sbcl-calispel
+                  sbcl-cl-base64
+                  sbcl-cl-colors2
+                  sbcl-cl-containers
+                  sbcl-cl-gopher
+                  sbcl-cl-html-diff
+                  sbcl-cl-json
+                  sbcl-cl-ppcre
+                  sbcl-cl-prevalence
+                  sbcl-cl-qrencode
+                  sbcl-cl-sqlite
+                  sbcl-cl-str
+                  sbcl-cl-tld
+                  sbcl-closer-mop
+                  sbcl-clss
+                  sbcl-cluffer
+                  sbcl-custom-hash-table
+                  sbcl-dexador
+                  sbcl-dissect
+                  sbcl-enchant
+                  sbcl-flexi-streams
+                  sbcl-history-tree
+                  sbcl-iolib
+                  sbcl-lass
+                  sbcl-local-time
+                  sbcl-log4cl
+                  sbcl-lparallel
+                  sbcl-montezuma
+                  sbcl-moptilities
+                  sbcl-named-readtables
+                  sbcl-nclasses
+                  sbcl-ndebug
+                  sbcl-nfiles
+                  sbcl-nhooks
+                  sbcl-njson
+                  sbcl-nkeymaps
+                  sbcl-nsymbols
+                  sbcl-parenscript
+                  sbcl-phos
+                  sbcl-plump
+                  sbcl-prompter
+                  sbcl-py-configparser
+                  sbcl-quri
+                  sbcl-serapeum
+                  sbcl-slime-swank
+                  sbcl-slynk
+                  sbcl-spinneret
+                  sbcl-trivia
+                  sbcl-trivial-clipboard
+                  sbcl-trivial-custom-debugger
+                  sbcl-trivial-features
+                  sbcl-trivial-garbage
+                  sbcl-trivial-package-local-nicknames
+                  sbcl-trivial-types
+                  sbcl-unix-opts
+                  ;; WebKitGTK deps
+                  sbcl-cl-cffi-gtk
+                  sbcl-cl-webkit
+                  glib-networking
+                  gsettings-desktop-schemas
+                  cl-gobject-introspection
+                  gtk+                  ; For the main loop
+                  webkitgtk-for-gtk3    ; Required when we use its typelib
+                  gobject-introspection
+                  pkg-config
+                  ;; Useful for video playback
+                  gst-libav
+                  gst-plugins-bad
+                  gst-plugins-base
+                  gst-plugins-good
+                  gst-plugins-ugly))
+    (synopsis "Extensible web-browser in Common Lisp")
+    (home-page "https://nyxt-browser.com/")
+    (description "Nyxt is a keyboard-oriented, extensible web-browser designed
+for power users.  The application has familiar Emacs and VI key-bindings and
+is fully configurable and extensible in Common Lisp.")
+    (license license:bsd-3)))
+
+;;;
+;;; nyxt-3.12 — 実験版 (Nix 準拠、現状ビルド失敗)
+;;;
+;;; upstream の公式リリース tarball
+;;;   nyxt-3.12.0-source-with-submodules.tar.xz
+;;; を使用し、依存 Common Lisp は _build/ 同梱版に統一。
+;;;
+;;; 本 recipe は nixpkgs の pkgs/applications/networking/browsers/nyxt/default.nix
+;;; と upstream リポジトリ同梱の guix.scm を参考にしている。
+;;; fix-so-paths phase で _build/ 内各 .lisp の hardcoded 共有ライブラリ名を
+;;; Guix store 絶対パスに書き換える処理完備。
+;;;
+;;; ただし 2026-04 時点で SBCL 2.4/2.5/2.6 系すべてで
+;;; save-lisp-and-die 時の scavenge_immobile_newspace クラッシュが発生する。
+;;; (モジュール冒頭の「nyxt-3.12 の既知問題」参照)
+;;;
+
+(define-public nyxt-next
+  (package
+    ;; `nyxt` と同名にすると guix が高い version (3.12) を優先してしまい、
+    ;; 既知問題で build に失敗するデフォルト動作になるので別名にする。
+    ;; `guix install nyxt-next` で明示的に選択する運用。
+    (name "nyxt-next")
     (version "3.12.0")
     (source
      (origin
@@ -65,35 +236,30 @@
     (build-system gnu-build-system)
     (arguments
      `(#:make-flags
-       ;; NYXT_SUBMODULES=false: release tarball には _build/ 以下に
-       ;; submodule が同梱されているため、makefile が git submodule
-       ;; update を呼ぼうとして失敗する (ビルドコンテナに git が無い) のを防ぐ。
        (list "nyxt" "NYXT_SUBMODULES=false"
              (string-append "DESTDIR=" (assoc-ref %outputs "out"))
              "PREFIX=")
-       #:strip-binaries? #f             ;stripping breaks SBCL binaries
+       #:strip-binaries? #f
        #:phases
        (modify-phases %standard-phases
          (delete 'configure)
-         ;; tarball はトップレベルに source/ / _build/ / libraries/ / makefile
-         ;; などを並列に持つ (単一ラッパーディレクトリが無い) ため、Guix の
-         ;; unpack フェーズが誤って source/ 内に cd する。1 階層上に戻す。
+         ;; release tarball にはトップレベル単一ラッパーディレクトリが
+         ;; 無く複数のトップレベル項目 (source/ / _build/ / libraries/
+         ;; / makefile) を持つため、Guix の unpack が誤って source/
+         ;; 内に cd する。1 階層戻す。
          (add-after 'unpack 'chdir-to-tarball-root
            (lambda _
              (when (file-exists? "../libraries")
                (chdir ".."))))
-         ;; 新しい SBCL は未使用レキシカル変数を style-warning で報告し、
-         ;; nasdf:fail-on-warnings がそれをエラー化するので緩和。
          (add-after 'chdir-to-tarball-root 'relax-fail-on-warnings
            (lambda _
              (substitute* "libraries/nasdf/tests.lisp"
                (("\\(unless \\(or \\(redefinition-p c\\)")
                 "(unless (or (redefinition-p c) (typep c 'style-warning)"))))
-         ;; upstream の guix.scm をそのまま踏襲: 同梱 _build/ 内の各
-         ;; .lisp にハードコードされた共有ライブラリ名を Guix store 上の
-         ;; 絶対パスに書き換える。これにより実行時の LD_LIBRARY_PATH
-         ;; 設定が最小限で済む。chdir-to-tarball-root 後に実行する必要あり。
-         (add-after 'relax-fail-on-warnings 'fix-so-paths
+         ;; upstream 同梱 guix.scm の処理:
+         ;; _build/ 内 .lisp にハードコードされた共有ライブラリ名を
+         ;; Guix store 絶対パスに書き換え。
+         (add-after 'unpack 'fix-so-paths
            (lambda* (#:key inputs #:allow-other-keys)
              (substitute* "_build/cl-plus-ssl/src/reload.lisp"
                (("libssl.so" all)
@@ -160,8 +326,8 @@
            (lambda _ (setenv "HOME" "/tmp")))
          ;; NYXT_SUBMODULES=false だと makefile は nasdf の
          ;; register-submodules を呼ばないため、ASDF が _build/ 配下の
-         ;; 同梱ライブラリ (bordeaux-threads 等) を見つけられない。
-         ;; 自前で CL_SOURCE_REGISTRY を渡して回避する。
+         ;; 同梱ライブラリを見つけられない。自前で CL_SOURCE_REGISTRY
+         ;; を設定する。
          (add-before 'build 'set-source-registry
            (lambda _
              (setenv "CL_SOURCE_REGISTRY"
@@ -184,11 +350,7 @@
                    (,(string-append gsettings "/lib")))
                  `("XDG_DATA_DIRS" ":" prefix
                    (,(string-append gsettings "/share"))))))))))
-    (native-inputs
-     ;; 本家 Guix の sbcl@2.5.8 は save-lisp-and-die に regression が
-     ;; あり Nyxt 3.12.0 のビルドで落ちるため、本チャンネルで提供する
-     ;; 2.4 系の安定版を使う (nixpkgs と同系統)。
-     (list sbcl-2.4))
+    (native-inputs (list sbcl-2.4))
     (inputs (list cairo
                   gdk-pixbuf
                   glib
@@ -209,9 +371,11 @@
                   webkitgtk-for-gtk3
                   wl-clipboard
                   xsel))
-    (synopsis "Extensible web-browser in Common Lisp")
+    (synopsis "Extensible web-browser in Common Lisp (3.12.0, experimental)")
     (home-page "https://nyxt-browser.com/")
-    (description "Nyxt is a keyboard-oriented, extensible web-browser designed
-for power users.  The application has familiar Emacs and VI key-bindings and
-is fully configurable and extensible in Common Lisp.")
+    (description "Nyxt 3.12.0 release tarball-based package.
+@strong{実験版:} SBCL の save-lisp-and-die と Nyxt 3.12.0 の組み合わせで
+scavenge_immobile_newspace でクラッシュする既知問題があり、SBCL 2.4 / 2.5
+/ 2.6 のいずれでも同様に失敗する。安定動作を求める場合は @code{nyxt}
+(3.11.7) を使うこと。")
     (license license:bsd-3)))
