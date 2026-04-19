@@ -32,7 +32,8 @@
   #:use-module (guix build-system copy)
   #:use-module ((guix licenses) #:prefix license:)
   #:use-module (gnu packages)
-  #:use-module (gnu packages ruby))
+  #:use-module (gnu packages ruby)
+  #:use-module (gnu packages ruby-xyz))
 
 ;;;
 ;;; ninix-fmo : File Mapping Object 用 Ruby gem (C 拡張)。
@@ -55,11 +56,10 @@
         (base32 "044a2h1b39lajyvdy5dlakg33pc1773j8fbs8b10blcq3cb94x6h"))))
     (build-system ruby-build-system)
     (arguments
-     ;; gemspec が required_ruby_version = ">= 3.1.0" を指定するため、
-     ;; デフォルトの ruby@2.7 ではなく ruby@3.1 を使用する。
+     ;; 新 Guix ではデフォルト `ruby` が 3.3 系になっており、gemspec の
+     ;; required_ruby_version = ">= 3.1.0" を満たすためそのまま使う。
      (list
       #:tests? #f
-      #:ruby ruby-3.1
       #:phases
       #~(modify-phases %standard-phases
           ;; glibc < 2.34 では shm_open / sem_* が librt に属するため、
