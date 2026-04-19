@@ -18,6 +18,28 @@
 ;;; そのまま踏襲する。
 ;;;
 ;;; 上流: https://github.com/atlas-engineer/nyxt
+;;;
+;;; === ビルド環境要件 (重要) ===
+;;;
+;;; 3.12.0 を本家 Guix 2026 の sbcl@2.5.8 で完全ビルドしようとすると、
+;;; save-lisp-and-die の tune-image-for-dump → scavenge_immobile_newspace
+;;; 内で globaldb 状態が壊れ "Unhandled NO-APPLICABLE-METHOD" /
+;;; "-1 is not of type (UNSIGNED-BYTE 44)" で image dump 直前に落ちる
+;;; 既知の regression を踏む (SBCL 2.5 シリーズ固有;
+;;; nixpkgs が 2.5 系を採用せず 2.4.10 / 2.6.0 / 2.6.1 のみにしている
+;;; のと同じ理由)。
+;;;
+;;; したがって本パッケージは:
+;;;   - SBCL が 2.5 系以外 (2.4.x / 2.6.x) の環境ではそのままビルド成功する
+;;;     (upstream の guix.scm と同じ構成なので)
+;;;   - Guix 2026 の既定 sbcl@2.5.8 では **ビルドに失敗する** 既知問題あり
+;;;
+;;; sbcl-2.6 を独自提供した override (rejafdofs/packages/lisp-overrides.scm)
+;;; 経由で試したが、2.6.1 には fset 読み取りテーブル関連の別バグがあり
+;;; やはり通らない。SBCL 2.6.2 以降もしくは 2.4.10 で再試行する必要がある。
+;;;
+;;; なお前バージョンの nyxt 3.11.7 は sbcl@2.5.8 + NASDF style-warning
+;;; 緩和 patch でビルド成功済み (bd215a5 以前の git 履歴参照)。
 
 (define-module (rejafdofs packages web-browsers)
   #:use-module (guix packages)
