@@ -1,0 +1,7 @@
+(channel
+  (version 0)
+  (description
+   "rejafdofs 個人向け Guix チャンネル。
+Nyxt ブラウザ、vrc-get (VRChat Package Manager の CLI)、
+ninix-kagari (Ukagaka 互換デスクトップマスコット) を提供します。")
+  (directory "."))
