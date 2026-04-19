@@ -145,6 +145,16 @@
                                "/bin/wl-paste\"")))))
          (add-before 'build 'fix-common-lisp-cache-folder
            (lambda _ (setenv "HOME" "/tmp")))
+         ;; NYXT_SUBMODULES=false だと makefile は nasdf の
+         ;; register-submodules を呼ばないため、ASDF が _build/ 配下の
+         ;; 同梱ライブラリ (bordeaux-threads 等) を見つけられない。
+         ;; 自前で CL_SOURCE_REGISTRY を渡して回避する。
+         (add-before 'build 'set-source-registry
+           (lambda _
+             (setenv "CL_SOURCE_REGISTRY"
+                     (string-append (getcwd) "/_build//:"
+                                    (getcwd) "/libraries//:"
+                                    (getcwd) "/"))))
          (add-before 'check 'configure-tests
            (lambda _ (setenv "NASDF_TESTS_NO_NETWORK" "1")))
          (add-after 'install 'wrap-program
