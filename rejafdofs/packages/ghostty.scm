@@ -58,6 +58,9 @@
     (build-system zig-build-system)
     (arguments
      (list
+      ;; zig-build-system のデフォルト zig (0.13) では build.zig.zon が
+      ;; 解析できない (1.3.1 は Zig 0.15 enum 構文使用)。明示。
+      #:zig zig-0.15
       #:install-source? #f
       #:tests? #f
       #:zig-build-flags
