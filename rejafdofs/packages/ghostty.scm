@@ -90,6 +90,17 @@
               "-Dcpu=baseline")
       #:phases
       #~(modify-phases %standard-phases
+          ;; Ghostty の SharedDeps.zig は `bzip2` という名前で
+          ;; system library をリンクしようとする (libbzip2.so を探す) が、
+          ;; Guix (および大半の Linux ディストロ) は libbz2.so を提供する
+          ;; ので名前が合わず "unable to find dynamic system library
+          ;; 'bzip2'" で失敗する。linkSystemLibrary2 の引数を "bz2" に
+          ;; 置き換えて正しい名前を使わせる。
+          (add-after 'unpack 'fix-bzip2-library-name
+            (lambda _
+              (substitute* "src/build/SharedDeps.zig"
+                (("linkSystemLibrary2\\(\"bzip2\"")
+                 "linkSystemLibrary2(\"bz2\""))))
           ;; Zig 依存を ../zig-cache/p/<cache-key>/ に展開する。
           ;; build.zig.zon の各 dep は中身がそのまま展開された状態を期待。
           (add-after 'unpack 'populate-zig-cache
