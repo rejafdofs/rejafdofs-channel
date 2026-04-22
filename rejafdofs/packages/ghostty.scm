@@ -68,17 +68,17 @@
       ;; (二重渡しすると zig が panic する)。代わりに DESTDIR を環境変数で
       ;; 渡す方式 (zig-build-system は --prefix "" → "" + DESTDIR を combine)。
       ;; --system <cache>/p で offline cache を使う。
-      #~(list "--system" "/tmp/zig-cache/p"
+      #~(list "--system" "../zig-cache/p"
               "-Doptimize=ReleaseFast"
               "-Dcpu=baseline")
       #:phases
       #~(modify-phases %standard-phases
-          ;; Zig 依存を /tmp/zig-cache/p/<cache-key>/ に展開する。
+          ;; Zig 依存を ../zig-cache/p/<cache-key>/ に展開する。
           ;; build.zig.zon の各 dep は中身がそのまま展開された状態を期待。
           (add-after 'unpack 'populate-zig-cache
             (lambda* (#:key inputs #:allow-other-keys)
               (use-modules (ice-9 ftw))
-              (let ((cache "/tmp/zig-cache/p"))
+              (let ((cache "../zig-cache/p"))
                 (mkdir-p cache)
                 (for-each
                  (lambda (entry)
@@ -128,7 +128,7 @@
                            (loop (cdr deps)
                                  (cons #~(list #$key #$origin)
                                        acc))))))
-                (setenv "ZIG_GLOBAL_CACHE_DIR" "/tmp/zig-cache")))))))
+                (setenv "ZIG_GLOBAL_CACHE_DIR" "../zig-cache")))))))
     (native-inputs
      ;; Ghostty 1.3.1 は Zig 0.15.2+ を要求 (デフォルト `zig` は 0.13 系)。
      (list zig-0.15
