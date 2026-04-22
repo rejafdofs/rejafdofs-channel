@@ -64,10 +64,11 @@
       #:install-source? #f
       #:tests? #f
       #:zig-build-flags
-      ;; --system <cache>/p で offline cache を使う。--prefix は zig が
-      ;; bin/share 等を配置するベース。Doptimize=ReleaseFast は upstream 推奨。
-      #~(list (string-append "--prefix=" #$output)
-              "--system" "/tmp/zig-cache/p"
+      ;; --prefix は zig-build-system が空で渡すので、ここでは指定しない
+      ;; (二重渡しすると zig が panic する)。代わりに DESTDIR を環境変数で
+      ;; 渡す方式 (zig-build-system は --prefix "" → "" + DESTDIR を combine)。
+      ;; --system <cache>/p で offline cache を使う。
+      #~(list "--system" "/tmp/zig-cache/p"
               "-Doptimize=ReleaseFast"
               "-Dcpu=baseline")
       #:phases
