@@ -11,12 +11,23 @@
 ;;; Ghostty の build.zig.zon は外部 URL から 36 個の Zig 依存を fetch する。
 ;;; Guix sandbox では fetch できないため、各依存を `(origin)` として
 ;;; ghostty-zig-deps.scm に列挙し、build phase 開始前に
-;;;   ZIG_GLOBAL_CACHE_DIR/p/<key>/
+;;;   ../zig-cache/p/<key>/
 ;;; に展開して `--system <cache>/p` で参照させる。これは upstream の
 ;;; PACKAGING.md「offline-cache」方式と同等。
 ;;;
 ;;; Zig 依存リストは scripts なしでは長いため、別ファイル
 ;;; ghostty-zig-deps.scm に分離 (build.zig.zon.json から自動生成)。
+;;;
+;;; === 現在のビルド状況 (2026-04 時点) ===
+;;;
+;;; Guix が提供する zig-0.15 (2026-04 時点 0.15.2) は `zig build` 自体が
+;;; "thread N panic: TODO" で停止する既知の不具合がある。`zig init` で
+;;; 作った最小プロジェクトでも再現するため ghostty 側の問題ではなく
+;;; Guix の zig-0.15 packaging bug。Guix 側で修正されるか、本チャンネルで
+;;; 別途 zig をパッケージし直すまで本パッケージは build できない。
+;;;
+;;; Zig dep cache を populate する populate-zig-cache phase までは
+;;; 正常に通ることは確認済み。`zig build` 段階で前述 panic に当たる。
 
 (define-module (rejafdofs packages ghostty)
   #:use-module (guix packages)
