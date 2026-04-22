@@ -101,11 +101,14 @@
                        (invoke "tar" "-xzf" artifact
                                "-C" dest "--strip-components=1"))
                       ;; git-fetch directory (no compression).
-                      ;; #:keep-permissions? #f を渡さないと store の
-                      ;; read-only mode を継承して後続ファイルが書けなくなる。
+                      ;; copy-recursively は store の read-only mode を
+                      ;; 継承するので cp で --no-preserve=mode を使い、
+                      ;; さらに u+w を強制する。
                       ((file-is-directory? artifact)
-                       (copy-recursively artifact dest
-                                         #:keep-permissions? #f))
+                       (invoke "cp" "-rL" "--no-preserve=all"
+                               (string-append artifact "/.")
+                               dest)
+                       (invoke "chmod" "-R" "u+w" dest))
                       (else
                        (error "Unknown artifact format" artifact)))))
                  ;; entry: (cache-key . origin-store-path)
