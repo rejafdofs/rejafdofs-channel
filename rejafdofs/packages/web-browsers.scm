@@ -112,17 +112,14 @@
                                 libs)
                            ":"))
                     (gi-path (getenv "GI_TYPELIB_PATH"))
-                    (gst-path (string-join
-                               (filter-map
-                                (lambda (lib)
-                                  (and=> (assoc-ref inputs lib)
-                                         (lambda (p)
-                                           (string-append
-                                            p "/lib/gstreamer-1.0"))))
-                                '("gstreamer" "gst-libav" "gst-plugins-base"
-                                  "gst-plugins-good" "gst-plugins-bad"
-                                  "gst-plugins-ugly"))
-                               ":"))
+                    (gst-libs
+                     (map (lambda (lib)
+                            (string-append (assoc-ref inputs lib)
+                                           "/lib/gstreamer-1.0"))
+                          '("gstreamer" "gst-libav" "gst-plugins-base"
+                            "gst-plugins-good" "gst-plugins-bad"
+                            "gst-plugins-ugly")))
+                    (gst-path (string-join gst-libs ":"))
                     (xdg-path (string-join
                                (map (lambda (lib)
                                       (string-append (assoc-ref inputs lib) "/share"))
