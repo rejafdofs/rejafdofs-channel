@@ -100,9 +100,12 @@
                            (string-suffix? ".tgz" artifact))
                        (invoke "tar" "-xzf" artifact
                                "-C" dest "--strip-components=1"))
-                      ;; git-fetch directory (no compression)
+                      ;; git-fetch directory (no compression).
+                      ;; #:keep-permissions? #f を渡さないと store の
+                      ;; read-only mode を継承して後続ファイルが書けなくなる。
                       ((file-is-directory? artifact)
-                       (copy-recursively artifact dest))
+                       (copy-recursively artifact dest
+                                         #:keep-permissions? #f))
                       (else
                        (error "Unknown artifact format" artifact)))))
                  ;; entry: (cache-key . origin-store-path)
