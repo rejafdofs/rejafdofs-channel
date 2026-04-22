@@ -101,14 +101,16 @@
                        (invoke "tar" "-xzf" artifact
                                "-C" dest "--strip-components=1"))
                       ;; git-fetch directory (no compression).
-                      ;; copy-recursively は store の read-only mode を
-                      ;; 継承するので cp で --no-preserve=mode を使い、
-                      ;; さらに u+w を強制する。
+                      ;; tar で source -> stdout -> tar 展開すると
+                      ;; --no-same-permissions が効いて store の
+                      ;; read-only mode を継承しない。
                       ((file-is-directory? artifact)
-                       (invoke "cp" "-rL" "--no-preserve=all"
-                               (string-append artifact "/.")
-                               dest)
-                       (invoke "chmod" "-R" "u+w" dest))
+                       (invoke
+                        "sh" "-c"
+                        (string-append
+                         "tar -C '" artifact
+                         "' -cf - . | tar -C '" dest
+                         "' --no-same-permissions --no-same-owner -xf -")))
                       (else
                        (error "Unknown artifact format" artifact)))))
                  ;; entry: (cache-key . origin-store-path)
