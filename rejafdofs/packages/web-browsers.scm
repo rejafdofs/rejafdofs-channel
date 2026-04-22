@@ -350,7 +350,11 @@ is fully configurable and extensible in Common Lisp.")
                    (,(string-append gsettings "/lib")))
                  `("XDG_DATA_DIRS" ":" prefix
                    (,(string-append gsettings "/share"))))))))))
-    (native-inputs (list sbcl-2.4))
+    (native-inputs
+     ;; Debian/Ubuntu の apt と同じ SBCL 2.2.9 を使う。upstream 公式
+     ;; の AppImage / .deb はこれでビルドされていると考えられる。
+     ;; 2.4 / 2.5 / 2.6 系は scavenge_immobile_newspace でクラッシュする。
+     (list sbcl-2.2.9))
     (inputs (list cairo
                   gdk-pixbuf
                   glib

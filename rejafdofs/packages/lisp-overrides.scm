@@ -52,6 +52,12 @@
   (make-sbcl-variant "2.4.11"
                      "05d4axv2j96ysjqsrk5xh6zvv90vlhnj7ghbf084r0rmdy2fa0sg"))
 
+;; Debian stable / Ubuntu noble の apt と同じ版。upstream の Nyxt 公式
+;; AppImage / .deb はこの SBCL でビルドされていると推測される。
+(define-public sbcl-2.2.9
+  (make-sbcl-variant "2.2.9"
+                     "0wn1nzzc55rjk0h4y466vsdm507qf48zlwh3gc3zgzr341nvvgky"))
+
 ;; nixpkgs のデフォルトと同版 (conservative fallback)。
 (define-public sbcl-2.4.10
   (make-sbcl-variant "2.4.10"
