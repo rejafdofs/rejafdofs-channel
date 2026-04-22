@@ -182,7 +182,11 @@
                   sbcl-unix-opts
                   ;; WebKitGTK deps
                   sbcl-cl-cffi-gtk
-                  sbcl-cl-webkit
+                  ;; 本家 sbcl-cl-webkit ではなく、本チャンネルの patch 版
+                  ;; (WORLD parameter NIL 許容) を使う。これがないと
+                  ;; "The value NIL is not of type STRING when binding
+                  ;; CL-WEBKIT2::WORLD" 警告でページレンダリングが妨げられる。
+                  sbcl-cl-webkit-patched
                   glib-networking
                   gsettings-desktop-schemas
                   cl-gobject-introspection

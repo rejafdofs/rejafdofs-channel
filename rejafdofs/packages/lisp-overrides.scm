@@ -19,7 +19,10 @@
 (define-module (rejafdofs packages lisp-overrides)
   #:use-module (guix packages)
   #:use-module (guix download)
-  #:use-module ((gnu packages lisp) #:prefix upstream:))
+  #:use-module (guix gexp)
+  #:use-module (guix utils)
+  #:use-module ((gnu packages lisp) #:prefix upstream:)
+  #:use-module ((gnu packages lisp-xyz) #:prefix upstream:))
 
 (define (make-sbcl-variant display-version base32-hash)
   "Guix 本家 sbcl パッケージを継承し version と source のみ差し替える。
@@ -62,3 +65,29 @@
 (define-public sbcl-2.4.10
   (make-sbcl-variant "2.4.10"
                      "1y72ql8dxwjkwkikyk26w4n38p6apvv2l7440kp3x4fjd5mkksyf"))
+
+
+;;;
+;;; cl-webkit fix: WORLD パラメータが NIL を許容するよう型宣言を緩和
+;;;
+;;; 本家 sbcl-cl-webkit 3.5.10 は webkit-web-view-evaluate-javascript の
+;;; declaim ftype で WORLD を `string` 必須型として宣言しているが、
+;;; 関数本体は `(if world ...)` で NIL を扱う前提になっている。
+;;; SBCL 厳格型検査下で NIL を渡すと
+;;;   "The value NIL is not of type STRING when binding CL-WEBKIT2::WORLD"
+;;; が発生し Nyxt のページレンダリングが妨げられる。
+;;;
+;;; 型宣言を `(or null string)` に緩める patch を当てた cl-webkit を
+;;; 提供する。
+
+(define-public sbcl-cl-webkit-patched
+  (let ((base upstream:sbcl-cl-webkit))
+    (package
+      (inherit base)
+      (name "sbcl-cl-webkit")
+      (source
+       (origin
+         (inherit (package-source base))
+         (patches
+          (append (or (origin-patches (package-source base)) '())
+                  (list (local-file "cl-webkit-fix.patch")))))))))
