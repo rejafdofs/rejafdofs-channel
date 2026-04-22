@@ -57,7 +57,8 @@
   #:use-module (gnu packages xml)
   #:use-module (gnu packages xorg)
   #:use-module (gnu packages zig)
-  #:use-module (rejafdofs packages ghostty-zig-deps))
+  #:use-module (rejafdofs packages ghostty-zig-deps)
+  #:use-module (rejafdofs packages zig-overrides))
 
 (define-public ghostty
   (package
@@ -76,7 +77,7 @@
      (list
       ;; zig-build-system のデフォルト zig (0.13) では build.zig.zon が
       ;; 解析できない (1.3.1 は Zig 0.15 enum 構文使用)。明示。
-      #:zig zig-0.15
+      #:zig zig-0.15-fixed
       #:install-source? #f
       #:tests? #f
       #:zig-build-flags
@@ -149,7 +150,7 @@
      ;; Ghostty 1.3.1 は Zig 0.15.2+ を要求 (デフォルト `zig` は 0.13 系)。
      ;; gettext-minimal: build.zig が msgfmt(1) を呼んで .po → .mo を
      ;; 生成するため必要 (なければ "FileNotFound" でビルド失敗)。
-     (list zig-0.15
+     (list zig-0.15-fixed
            pkg-config
            pandoc
            ncurses
