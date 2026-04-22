@@ -259,7 +259,8 @@ is fully configurable and extensible in Common Lisp.")
          ;; upstream 同梱 guix.scm の処理:
          ;; _build/ 内 .lisp にハードコードされた共有ライブラリ名を
          ;; Guix store 絶対パスに書き換え。
-         (add-after 'unpack 'fix-so-paths
+         ;; chdir-to-tarball-root 後に走る必要があるのでそれを anchor。
+         (add-after 'relax-fail-on-warnings 'fix-so-paths
            (lambda* (#:key inputs #:allow-other-keys)
              (substitute* "_build/cl-plus-ssl/src/reload.lisp"
                (("libssl.so" all)
