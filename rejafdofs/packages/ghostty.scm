@@ -43,6 +43,7 @@
   #:use-module (gnu packages bash)
   #:use-module (gnu packages compression)
   #:use-module (gnu packages fontutils)
+  #:use-module (gnu packages gettext)
   #:use-module (gnu packages glib)
   #:use-module (gnu packages gnome)
   #:use-module (gnu packages gtk)
@@ -146,12 +147,15 @@
                 (setenv "ZIG_GLOBAL_CACHE_DIR" "../zig-cache")))))))
     (native-inputs
      ;; Ghostty 1.3.1 は Zig 0.15.2+ を要求 (デフォルト `zig` は 0.13 系)。
+     ;; gettext-minimal: build.zig が msgfmt(1) を呼んで .po → .mo を
+     ;; 生成するため必要 (なければ "FileNotFound" でビルド失敗)。
      (list zig-0.15
            pkg-config
            pandoc
            ncurses
            libxml2
-           blueprint-compiler))
+           blueprint-compiler
+           gettext-minimal))
     (inputs
      (list bash-minimal
            ;; Core
