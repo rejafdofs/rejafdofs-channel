@@ -86,9 +86,13 @@
       ;; (二重渡しすると zig が panic する)。代わりに DESTDIR を環境変数で
       ;; 渡す方式 (zig-build-system は --prefix "" → "" + DESTDIR を combine)。
       ;; --system <cache>/p で offline cache を使う。
+      ;; -Dversion-string=VERSION: release tarball には .git が無いので
+      ;; そのままだと "1.3.1-dev+0000000" と表示される。upstream 推奨の
+      ;; override flag で固定する。
       #~(list "--system" "../zig-cache/p"
               "-Doptimize=ReleaseFast"
-              "-Dcpu=baseline")
+              "-Dcpu=baseline"
+              (string-append "-Dversion-string=" #$version))
       #:phases
       #~(modify-phases %standard-phases
           ;; Ghostty の SharedDeps.zig は `bzip2` という名前で
