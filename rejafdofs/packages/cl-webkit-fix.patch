@@ -1,0 +1,24 @@
+Allow NIL for the optional WORLD argument of webkit-web-view-evaluate-javascript.
+
+The function body already does `(if world ...)` to dispatch between the
+"in-world" and the default code paths.  However the (declaim (ftype ...))
+declaration above types WORLD as `string`, which makes SBCL signal
+
+  Warning: Error on GTK thread:
+    The value NIL is not of type STRING when binding CL-WEBKIT2::WORLD
+
+at runtime under strict type-checking when Nyxt (or any caller) invokes
+this function without a world.  Relaxing the type to `(or null string)`
+matches the function's actual contract.
+
+--- a/webkit2/webkit2.web-view.lisp
++++ b/webkit2/webkit2.web-view.lisp
+@@ -276,7 +276,7 @@
+
+ (declaim (ftype (function (webkit-web-view string &optional
+                                            (or null (function (t t)))
+-                                           (or null (function (condition))) string))
++                                           (or null (function (condition))) (or null string)))
+                 webkit-web-view-evaluate-javascript))
+ (defun webkit-web-view-evaluate-javascript (web-view javascript
+                                             &optional call-back error-call-back world)

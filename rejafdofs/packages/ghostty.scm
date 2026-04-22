@@ -18,16 +18,20 @@
 ;;; Zig 依存リストは scripts なしでは長いため、別ファイル
 ;;; ghostty-zig-deps.scm に分離 (build.zig.zon.json から自動生成)。
 ;;;
-;;; === 現在のビルド状況 (2026-04 時点) ===
+;;; === ビルド環境要件 ===
 ;;;
-;;; Guix が提供する zig-0.15 (2026-04 時点 0.15.2) は `zig build` 自体が
-;;; "thread N panic: TODO" で停止する既知の不具合がある。`zig init` で
-;;; 作った最小プロジェクトでも再現するため ghostty 側の問題ではなく
-;;; Guix の zig-0.15 packaging bug。Guix 側で修正されるか、本チャンネルで
-;;; 別途 zig をパッケージし直すまで本パッケージは build できない。
+;;; Zig 0.15.2 のコンパイラは `copy_file_range(2)` syscall を直接呼び、
+;;; ENOSYS のフォールバックを持たない (内部で `@panic("TODO")` で死ぬ)。
+;;; gVisor (`runsc`) などの sandbox では `copy_file_range` が未実装
+;;; なので、本パッケージはそれら sandbox 内では build できない。
+;;; 通常の Linux kernel では `copy_file_range` は 4.5 以降サポート
+;;; されており、何の問題もなく build できる想定。
 ;;;
-;;; Zig dep cache を populate する populate-zig-cache phase までは
-;;; 正常に通ることは確認済み。`zig build` 段階で前述 panic に当たる。
+;;; populate-zig-cache phase までは sandbox 環境でも正常完了することを
+;;; 確認済み (cache に 36 entry 展開成功)。`zig build` 段階で前述
+;;; gVisor 制限に当たる場合は `--disable-chroot` でない通常の Guix
+;;; 環境を使用するか、別途 Zig 側に upstream patch (ENOSYS fallback)
+;;; を当てる必要がある。
 
 (define-module (rejafdofs packages ghostty)
   #:use-module (guix packages)
@@ -39,6 +43,7 @@
   #:use-module (gnu packages bash)
   #:use-module (gnu packages compression)
   #:use-module (gnu packages fontutils)
+  #:use-module (gnu packages gettext)
   #:use-module (gnu packages glib)
   #:use-module (gnu packages gnome)
   #:use-module (gnu packages gtk)
@@ -142,12 +147,15 @@
                 (setenv "ZIG_GLOBAL_CACHE_DIR" "../zig-cache")))))))
     (native-inputs
      ;; Ghostty 1.3.1 は Zig 0.15.2+ を要求 (デフォルト `zig` は 0.13 系)。
+     ;; gettext-minimal: build.zig が msgfmt(1) を呼んで .po → .mo を
+     ;; 生成するため必要 (なければ "FileNotFound" でビルド失敗)。
      (list zig-0.15
            pkg-config
            pandoc
            ncurses
            libxml2
-           blueprint-compiler))
+           blueprint-compiler
+           gettext-minimal))
     (inputs
      (list bash-minimal
            ;; Core
