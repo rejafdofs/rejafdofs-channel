@@ -1,13 +1,17 @@
 # rejafdofs-channel
 
-rejafdofs 個人向け Guix チャンネル。以下 3 パッケージを提供します。
+rejafdofs 個人向け Guix チャンネル。以下のパッケージを提供します。
 
-| パッケージ       | バージョン | 説明                                                 | ビルド検証             | ライセンス |
-|------------------|-----------|------------------------------------------------------|------------------------|------------|
-| `nyxt`           | 3.11.7    | Common Lisp 製の拡張可能ウェブブラウザ               | ✅ 成功 (Guix 2026)    | BSD-3      |
-| `vrc-get`        | 1.9.1     | VRChat Package Manager (VCC) の OSS CLI              | ✅ 成功 (Guix 2026)    | MIT        |
-| `ruby-ninix-fmo` | 1.0.2     | ninix-kagari 用 FileMappingObject Ruby gem           | ✅ 成功                 | MIT        |
-| `ninix-kagari`   | 3.1.1     | Ukagaka 互換デスクトップマスコット                   | ✅ 成功 (build のみ)    | GPL-2      |
+| パッケージ       | バージョン | 説明                                                        | ビルド検証             | ライセンス |
+|------------------|-----------|-------------------------------------------------------------|------------------------|------------|
+| `nyxt`           | 3.11.7    | Common Lisp 製の拡張可能ウェブブラウザ (安定版)             | ✅ 成功 (Guix 2026)    | BSD-3      |
+| `nyxt-next`      | 3.12.0    | Nyxt 3.12.0 (Nix 準拠、**実験版・現状ビルド失敗**)           | ⚠️ 失敗 (下記)          | BSD-3      |
+| `vrc-get`        | 1.9.1     | VRChat Package Manager (VCC) の OSS CLI                     | ✅ 成功 (Guix 2026)    | MIT        |
+| `ruby-ninix-fmo` | 1.0.2     | ninix-kagari 用 FileMappingObject Ruby gem                  | ✅ 成功                 | MIT        |
+| `ninix-kagari`   | 3.1.1     | Ukagaka 互換デスクトップマスコット                          | ✅ 成功 (build のみ)    | GPL-2      |
+| `sbcl-2.6`       | 2.6.3     | SBCL 2.6 系 (本家 sbcl@2.5.8 の override)                   | 定義のみ                | MIT / PD   |
+| `sbcl-2.4`       | 2.4.11    | SBCL 2.4 系 (nixpkgs と同系統)                              | ✅ bootstrap 成功       | MIT / PD   |
+| `sbcl-2.4.10`    | 2.4.10    | SBCL 2.4.10 (nixpkgs のデフォルトと同版)                    | 定義のみ                | MIT / PD   |
 
 ## セットアップ
 
@@ -47,16 +51,51 @@ guix build -L . ninix-kagari
 削除されました (upstream issue `guix/guix#518`)。これが `guix install nyxt`
 が失敗する原因です。
 
-本チャンネルでは、削除直前のリビジョン `030bd035ae` に存在した
-**nyxt 3.11.7 の完全な定義をそのまま取り込んで**います。
-依存する 73 個の sbcl-* / cl-* / webkitgtk / gst-* 等は現行の本家 Guix に
-残っているため、追加定義は不要で `guix build -L . nyxt` が通ります。
+本チャンネルでは 2 つのバリアントを提供します。
 
-なお、新しい SBCL (2.5.8+) は未使用レキシカル変数を style-warning で
-報告するようになっており、nyxt の `nasdf:fail-on-warnings` がそれを
+#### `nyxt` (3.11.7, 安定版 / 推奨)
+
+削除直前のリビジョン `030bd035ae` に存在した **nyxt 3.11.7 の完全な
+定義をそのまま取り込んで**います。依存する 73 個の sbcl-* / cl-* /
+webkitgtk / gst-* 等は現行の本家 Guix に残っているため、追加定義は
+不要で `guix build -L . nyxt` が通ります。
+
+新しい SBCL (2.5.8+) は未使用レキシカル変数を style-warning で
+報告するようになり、nyxt の `nasdf:fail-on-warnings` がそれを
 コンパイルエラーに昇格するため、**`libraries/nasdf/tests.lisp` の
 フィルタに `(typep c 'style-warning)` を追加する patch を自動で適用**
 しています。
+
+#### `nyxt-next` (3.12.0, 実験版 / 現状ビルド失敗)
+
+upstream の公式リリース tarball
+`nyxt-3.12.0-source-with-submodules.tar.xz` を使い、依存 Common Lisp を
+_build/ 同梱版に統一する **Nix 準拠**の recipe です
+(`nixpkgs/.../browsers/nyxt/default.nix` と upstream リポジトリ直下の
+`guix.scm` を参考にした)。
+
+`fix-so-paths` phase で _build/ 内各 .lisp のハードコードされた共有
+ライブラリ名を Guix store 絶対パスに書き換えるなど、ビルド recipe
+としては完成しています。
+
+**既知問題 (2026-04 時点):** Nyxt 3.12.0 は `asdf:make` の
+save-lisp-and-die 段階で SBCL の `scavenge_immobile_newspace` が
+クラッシュする。同現象が SBCL 2.4.11 / 2.5.8 / 2.6.1 いずれでも
+再現するため、SBCL version 固有ではなく Nyxt 3.12.0 側の immobile
+space 使用パターンが原因とみなしている。SBCL 2.6.3+ / 上流修正待ち。
+
+`guix install nyxt-next` で明示選択できるが、現状**ビルドは失敗**します。
+安定動作には `nyxt` (3.11.7) を利用してください。
+
+#### SBCL variants (`rejafdofs/packages/lisp-overrides.scm`)
+
+本家 Guix の `sbcl@2.5.8` を version だけ差し替えた派生を提供:
+
+  - `sbcl-2.6` (2.6.3)  — 最新系列
+  - `sbcl-2.4` (2.4.11) — 長期安定系 (nixpkgs のサポート対象)
+  - `sbcl-2.4.10`       — nixpkgs のデフォルトと同版
+
+`nyxt-next` で SBCL version を切り替えて検証するときなどに利用。
 
 ### vrc-get (`rejafdofs/packages/vrchat.scm` + `rust-crates.scm`)
 
