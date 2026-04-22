@@ -20,16 +20,18 @@
 ;;; Nyxt 3.12.0 は asdf:make 実行 (save-lisp-and-die で image を生成
 ;;; する段階) で以下のいずれかの形で SBCL がクラッシュする:
 ;;;
+;;;   - SBCL 2.2.9  : SB-KERNEL:CODE-N-ENTRIES で TYPE-ERROR
+;;;                   (Debian/Ubuntu apt と同版)
+;;;   - SBCL 2.4.11 : scavenge_immobile_newspace で generic crash
 ;;;   - SBCL 2.5.x  : "-1 is not of type (UNSIGNED-BYTE 44)"
 ;;;                   (SB-IMPL::INFO-NAME-LIST 周辺の globaldb regression)
 ;;;   - SBCL 2.6.1  : "Bug in readtable iterators or concurrent access?"
 ;;;                   (fset の readtable 操作)
-;;;   - SBCL 2.4.11 : scavenge_immobile_newspace で generic crash
 ;;;
-;;; 3 系列の SBCL 全てで失敗することから SBCL version 固有ではなく、
-;;; Nyxt 3.12.0 自身が immobile-space を特定のサイズ/配置に置く pattern
-;;; を triggering しているとみなせる。upstream の issue tracker で
-;;; 同現象が解決されるか、SBCL 2.6.3 以降で改善されるまで保留。
+;;; 4 系列の SBCL 全てで失敗することから SBCL version 固有ではなく、
+;;; Nyxt 3.12.0 自身が image dump 時の SBCL に何らかの矛盾を起こす
+;;; パターンになっているとみなせる。upstream の issue tracker での
+;;; 解決もしくはより新しい SBCL での再試行待ち。
 ;;;
 ;;; 上流: https://github.com/atlas-engineer/nyxt
 
@@ -380,7 +382,7 @@ is fully configurable and extensible in Common Lisp.")
     (home-page "https://nyxt-browser.com/")
     (description "Nyxt 3.12.0 release tarball-based package.
 @strong{実験版:} SBCL の save-lisp-and-die と Nyxt 3.12.0 の組み合わせで
-scavenge_immobile_newspace でクラッシュする既知問題があり、SBCL 2.4 / 2.5
-/ 2.6 のいずれでも同様に失敗する。安定動作を求める場合は @code{nyxt}
+save-lisp-and-die でクラッシュする既知問題があり、SBCL 2.2 / 2.4 / 2.5 / 2.6
+のいずれでも同様に失敗する。安定動作を求める場合は @code{nyxt}
 (3.11.7) を使うこと。")
     (license license:bsd-3)))
