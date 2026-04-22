@@ -111,7 +111,8 @@
                         (string-append
                          "tar -C '" artifact
                          "' -cf - . | tar -C '" dest
-                         "' --no-same-permissions --no-same-owner -xf -")))
+                         "' --no-same-permissions --no-same-owner"
+                         " --overwrite -xf -")))
                       (else
                        (error "Unknown artifact format" artifact)))))
                  ;; entry: (cache-key . origin-store-path)
