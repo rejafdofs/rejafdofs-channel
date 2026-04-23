@@ -101,8 +101,10 @@
            (lambda _ (setenv "NYXT_TESTS_NO_NETWORK" "1")))
          (add-after 'install 'wrap-program
            (lambda* (#:key inputs outputs #:allow-other-keys)
-             (let* ((bin (string-append (assoc-ref outputs "out") "/bin/nyxt"))
+             (let* ((out (assoc-ref outputs "out"))
+                    (bin (string-append out "/bin/nyxt"))
                     (glib-networking (assoc-ref inputs "glib-networking"))
+                    (webkit (assoc-ref inputs "webkitgtk-for-gtk3"))
                     (libs '("gsettings-desktop-schemas"))
                     (path (string-join
                            (map (lambda (lib)
@@ -110,17 +112,34 @@
                                 libs)
                            ":"))
                     (gi-path (getenv "GI_TYPELIB_PATH"))
+                    (gst-libs
+                     (map (lambda (lib)
+                            (string-append (assoc-ref inputs lib)
+                                           "/lib/gstreamer-1.0"))
+                          '("gstreamer" "gst-libav" "gst-plugins-base"
+                            "gst-plugins-good" "gst-plugins-bad"
+                            "gst-plugins-ugly")))
+                    (gst-path (string-join gst-libs ":"))
                     (xdg-path (string-join
                                (map (lambda (lib)
                                       (string-append (assoc-ref inputs lib) "/share"))
                                     libs)
                                ":")))
                (wrap-program bin
+                 ;; HTTPS / TLS support (glib-networking が無いと
+                 ;; "TLS is not supported" でページがロードできない)。
                  `("GIO_EXTRA_MODULES" prefix
                    (,(string-append glib-networking "/lib/gio/modules")))
                  `("GI_TYPELIB_PATH" prefix (,gi-path))
                  `("LD_LIBRARY_PATH" ":" prefix (,path))
-                 `("XDG_DATA_DIRS" ":" prefix (,xdg-path)))))))))
+                 `("XDG_DATA_DIRS" ":" prefix (,xdg-path))
+                 ;; WebKit の補助プロセス (WebKitWebProcess /
+                 ;; WebKitNetworkProcess) の場所。これが無いと renderer
+                 ;; サブプロセスが起動できずページが空白になる。
+                 `("WEBKIT_EXEC_PATH" =
+                   (,(string-append webkit "/libexec/webkit2gtk-4.1")))
+                 ;; 動画/音声 codec
+                 `("GST_PLUGIN_SYSTEM_PATH" ":" prefix (,gst-path)))))))))
     (native-inputs (list cl-lisp-unit2 sbcl))
     (inputs (list bash-minimal
                   sbcl-alexandria
