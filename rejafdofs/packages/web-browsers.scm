@@ -139,7 +139,14 @@
                  `("WEBKIT_EXEC_PATH" =
                    (,(string-append webkit "/libexec/webkit2gtk-4.1")))
                  ;; 動画/音声 codec
-                 `("GST_PLUGIN_SYSTEM_PATH" ":" prefix (,gst-path)))))))))
+                 `("GST_PLUGIN_SYSTEM_PATH" ":" prefix (,gst-path))
+                 ;; "Error in FFI method: 1073741824 is not of type
+                 ;; GDK:GDK-EVENT" 対策。WebKitGTK の compositing 経路
+                 ;; (HW accel) を無効化することで cl-cffi-gtk が知らない
+                 ;; 新 GDK enum を含む event を回避する。これがないと
+                 ;; ページが空白になる症状が出る (Guix bug#79119,
+                 ;; FreeBSD forum で workaround として確認)。
+                 `("WEBKIT_DISABLE_COMPOSITING_MODE" = ("1")))))))))
     (native-inputs (list cl-lisp-unit2 sbcl))
     (inputs (list bash-minimal
                   sbcl-alexandria
