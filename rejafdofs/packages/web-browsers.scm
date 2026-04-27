@@ -78,7 +78,9 @@
        (sha256
         (base32
          "0qrlks2b4a02b1lf8ah5cv3y32kh8yxnxkvfgrnia92g72xpj4j2"))
-       (file-name (git-file-name name version))))
+       (file-name (git-file-name name version))
+       (patches
+        (list (local-file "nyxt-signal-robustness.patch")))))
     (build-system gnu-build-system)
     (arguments
      `(#:make-flags (list "nyxt" "NYXT_SUBMODULES=false"

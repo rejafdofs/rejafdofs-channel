@@ -1,0 +1,59 @@
+Make Nyxt's renderer signal handlers robust to FFI type-errors.
+
+Newer WebKitGTK 2.5x and GDK 3.24.x sometimes hand stale or
+not-yet-translated values to the renderer signal handlers, surfacing
+as
+
+  Warning: Error on GTK thread:
+    The value 1073741824 is not of type GDK:GDK-EVENT
+    when binding NYXT/RENDERER/GTK::EVENT
+
+(see Guix bug #79119, Codeberg guix/guix#518).  When this signal
+handler is invoked from a foreign thread, the resulting type-error
+unwinds through SBCL's deferrable-signals machinery and can produce a
+"fatal error encountered ... deferrable signals partially blocked"
+abort that takes the whole renderer down (the page becomes blank and
+the app is unusable).
+
+Wrap the body of `connect-signal` and `connect-signal-function`'s
+generated lambdas with `handler-case` so a single stray event from a
+foreign thread cannot tear down the renderer.  This is intentionally
+lossy: dropping one event is far better than killing the whole
+session.  Once cl-cffi-gtk learns the new GDK enums upstream this
+patch can be reverted.
+
+--- a/source/renderer/gtk.lisp	2026-04-27 00:35:50.934774490 +0000
++++ b/source/renderer/gtk.lisp	2026-04-27 00:35:50.984774476 +0000
+@@ -410,8 +410,11 @@
+   "Connect SIGNAL to OBJECT with a function FN.
+ OBJECT must have the `gtk-object' and `handler-ids' slots.
+ See also `connect-signal'."
+-  `(let ((handler-id (gobject:g-signal-connect
+-                      (gtk-object ,object) ,signal ,fn)))
++  `(let* ((wrapped-fn (lambda (&rest args)
++                        (handler-case (apply ,fn args)
++                          (error (c) (declare (ignore c)) nil))))
++          (handler-id (gobject:g-signal-connect
++                       (gtk-object ,object) ,signal wrapped-fn)))
+      (push handler-id (handler-ids ,object))))
+ 
+ (defmacro connect-signal (object signal new-thread-p (&rest args) &body body)
+@@ -426,11 +429,13 @@
+                         (lambda (,@args)
+                           ,@(sera:unsplice documentation)
+                           ,@declares
+-                          ,(if new-thread-p
+-                               `(run-thread "renderer signal handler"
+-                                    ,@forms)
+-                               `(with-protect ("Error in signal on renderer thread: ~a" :condition)
+-                                  ,@forms))))))
++                          (handler-case
++                              ,(if new-thread-p
++                                   `(run-thread "renderer signal handler"
++                                        ,@forms)
++                                   `(with-protect ("Error in signal on renderer thread: ~a" :condition)
++                                      ,@forms))
++                            (error (c) (declare (ignore c)) nil))))))
+        (push handler-id (handler-ids ,object)))))
+ 
+ (defmethod customize-instance :after ((window gtk-window) &key)
