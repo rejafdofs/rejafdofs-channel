@@ -110,8 +110,12 @@
                   (ice-9 rdelim))
       #:builder
       #~(begin
-          (use-modules (guix build utils))
+          (use-modules (guix build utils)
+                       (ice-9 popen)
+                       (ice-9 rdelim))
           (let* ((out      #$output)
+                 (gzip     (string-append #$(this-package-native-input "gzip")
+                                          "/bin/gzip"))
                  (tar      (string-append #$(this-package-native-input "tar")
                                           "/bin/tar"))
                  (squash   (string-append #$(this-package-native-input
@@ -125,15 +129,23 @@
                  (loader   (string-append glibc "/lib/ld-linux-x86-64.so.2"))
                  (work     (string-append (getcwd) "/work")))
             (mkdir-p work)
-            ;; 1. Linux-Nyxt-x86_64.tar.gz を展開
-            (invoke tar "-xzf" #$source "-C" work)
-            ;; 2. AppImage 内の squashfs を抽出 (offset は AppImage runtime
-            ;;    が文字列で公開してくれているが、決め打ちで unsquashfs に
-            ;;    探索させる方が確実)
-            (let ((appimage (string-append work "/Nyxt-x86_64.AppImage")))
+            ;; 1. tar.gz の中身は AppImage 1 file。upstream の tarball は
+            ;;    "extra field encrypted" 拡張で tar -xzf が偶に失敗する
+            ;;    ため、gzip と tar を分離する。
+            (invoke "sh" "-c"
+                    (string-append gzip " -dc " #$source " | "
+                                   tar " -xf - -C " work))
+            ;; 2. AppImage 内の squashfs を抽出。offset は AppImage runtime
+            ;;    が --appimage-offset で出してくれるのでそれを取得。
+            (let* ((appimage (string-append work "/Nyxt-x86_64.AppImage")))
               (chmod appimage #o755)
-              (invoke squash "-d" (string-append work "/sq") "-no-progress"
-                      "-quiet" "-offset" "1024" appimage))
+              (let* ((port (open-input-pipe
+                            (string-append appimage " --appimage-offset")))
+                     (offset (read-line port)))
+                (close-pipe port)
+                (invoke squash "-d" (string-append work "/sq")
+                        "-no-progress" "-quiet" "-offset" offset
+                        appimage)))
             ;; (注: 実際の offset は AppImage runtime の version で異なる
             ;; ので、自動検出版は build-finalize で対応)
             (let* ((src (string-append work "/sq")))
@@ -180,6 +192,7 @@
               #t)))))
     (native-inputs
      (list (specification->package "tar")
+           (specification->package "gzip")
            (specification->package "squashfs-tools")
            (specification->package "patchelf")))
     (inputs
