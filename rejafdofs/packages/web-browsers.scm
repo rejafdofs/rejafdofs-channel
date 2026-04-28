@@ -130,11 +130,16 @@
                  (work     (string-append (getcwd) "/work")))
             (mkdir-p work)
             ;; 1. tar.gz の中身は AppImage 1 file。upstream の tarball は
-            ;;    "extra field encrypted" 拡張で tar -xzf が偶に失敗する
-            ;;    ため、gzip と tar を分離する。
-            (invoke "sh" "-c"
-                    (string-append gzip " -dc " #$source " | "
-                                   tar " -xf - -C " work))
+            ;;    "extra field encrypted" 拡張で tar -xzf が直接通らない
+            ;;    ため、source を work にコピーして gunzip でインプレース
+            ;;    展開してから tar -xf で解く。
+            (let ((local (string-append work "/Linux-Nyxt-x86_64.tar.gz")))
+              (copy-file #$source local)
+              (chmod local #o644)
+              (invoke gzip "-d" local)
+              (invoke tar "-xf" (string-append work "/Linux-Nyxt-x86_64.tar")
+                      "-C" work)
+              (delete-file (string-append work "/Linux-Nyxt-x86_64.tar")))
             ;; 2. AppImage 内の squashfs を抽出。offset は AppImage runtime
             ;;    が --appimage-offset で出してくれるのでそれを取得。
             (let* ((appimage (string-append work "/Nyxt-x86_64.AppImage")))
