@@ -78,9 +78,7 @@
        (sha256
         (base32
          "0qrlks2b4a02b1lf8ah5cv3y32kh8yxnxkvfgrnia92g72xpj4j2"))
-       (file-name (git-file-name name version))
-       (patches
-        (list (local-file "nyxt-signal-robustness.patch")))))
+       (file-name (git-file-name name version))))
     (build-system gnu-build-system)
     (arguments
      `(#:make-flags (list "nyxt" "NYXT_SUBMODULES=false"
@@ -154,10 +152,7 @@
                  ;; (各 lib が個別 store path) と相性が悪く、renderer
                  ;; 起動直後にクラッシュすることがある。Sandbox を切って
                  ;; 安定優先で動かす (security trade-off あり)。
-                 `("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS" = ("1"))
-                 ;; 一部 NSS/SSL バックエンドが古いと web process が
-                 ;; 起動できないので念のため。
-                 `("WEBKIT_FORCE_SANDBOX" = ("0")))))))))
+                 `("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS" = ("1")))))))))
     (native-inputs (list cl-lisp-unit2 sbcl))
     (inputs (list bash-minimal
                   sbcl-alexandria
