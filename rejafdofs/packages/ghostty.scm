@@ -56,8 +56,10 @@
   #:use-module (gnu packages vulkan)
   #:use-module (gnu packages xml)
   #:use-module (gnu packages xorg)
+  #:use-module (gnu packages elf)
   #:use-module (gnu packages zig)
-  #:use-module (rejafdofs packages ghostty-zig-deps))
+  #:use-module (rejafdofs packages ghostty-zig-deps)
+  #:use-module (rejafdofs packages zig-overrides))
 
 (define-public ghostty
   (package
@@ -76,7 +78,7 @@
      (list
       ;; zig-build-system のデフォルト zig (0.13) では build.zig.zon が
       ;; 解析できない (1.3.1 は Zig 0.15 enum 構文使用)。明示。
-      #:zig zig-0.15
+      #:zig zig-0.15-fixed
       #:install-source? #f
       #:tests? #f
       #:zig-build-flags
@@ -84,11 +86,26 @@
       ;; (二重渡しすると zig が panic する)。代わりに DESTDIR を環境変数で
       ;; 渡す方式 (zig-build-system は --prefix "" → "" + DESTDIR を combine)。
       ;; --system <cache>/p で offline cache を使う。
+      ;; -Dversion-string=VERSION: release tarball には .git が無いので
+      ;; そのままだと "1.3.1-dev+0000000" と表示される。upstream 推奨の
+      ;; override flag で固定する。
       #~(list "--system" "../zig-cache/p"
               "-Doptimize=ReleaseFast"
-              "-Dcpu=baseline")
+              "-Dcpu=baseline"
+              (string-append "-Dversion-string=" #$version))
       #:phases
       #~(modify-phases %standard-phases
+          ;; Ghostty の SharedDeps.zig は `bzip2` という名前で
+          ;; system library をリンクしようとする (libbzip2.so を探す) が、
+          ;; Guix (および大半の Linux ディストロ) は libbz2.so を提供する
+          ;; ので名前が合わず "unable to find dynamic system library
+          ;; 'bzip2'" で失敗する。linkSystemLibrary2 の引数を "bz2" に
+          ;; 置き換えて正しい名前を使わせる。
+          (add-after 'unpack 'fix-bzip2-library-name
+            (lambda _
+              (substitute* "src/build/SharedDeps.zig"
+                (("linkSystemLibrary2\\(\"bzip2\"")
+                 "linkSystemLibrary2(\"bz2\""))))
           ;; Zig 依存を ../zig-cache/p/<cache-key>/ に展開する。
           ;; build.zig.zon の各 dep は中身がそのまま展開された状態を期待。
           (add-after 'unpack 'populate-zig-cache
@@ -144,18 +161,41 @@
                            (loop (cdr deps)
                                  (cons #~(list #$key #$origin)
                                        acc))))))
-                (setenv "ZIG_GLOBAL_CACHE_DIR" "../zig-cache")))))))
+                (setenv "ZIG_GLOBAL_CACHE_DIR" "../zig-cache"))))
+          ;; Zig は link 時に /usr/lib/x86_64-linux-gnu を RUNPATH の
+          ;; 先頭に埋め込む。Guix には存在しないパスなので純粋 Guix
+          ;; System では害はないが、Ubuntu 等のディストロ上に Guix を
+          ;; 入れている環境では先に Ubuntu の libc を拾って
+          ;; "undefined symbol: __nptl_change_stack_perm" で実行時に
+          ;; 落ちるため、patchelf で削除する。
+          (add-after 'install 'strip-bogus-runpath
+            (lambda* (#:key outputs #:allow-other-keys)
+              (let ((bin (string-append (assoc-ref outputs "out")
+                                        "/bin/ghostty")))
+                (when (file-exists? bin)
+                  ;; sh で printf|patchelf して一時 file に書き、
+                  ;; sed で bogus path を除去してから set-rpath する。
+                  (invoke
+                   "sh" "-c"
+                   (string-append
+                    "rp=$(patchelf --print-rpath " bin
+                    "); kept=$(printf '%s' \"$rp\" | "
+                    "sed 's|/usr/lib/x86_64-linux-gnu:||g; "
+                    "s|:/usr/lib/x86_64-linux-gnu||g; "
+                    "s|^/usr/lib/x86_64-linux-gnu$||'); "
+                    "patchelf --set-rpath \"$kept\" " bin)))))))))
     (native-inputs
      ;; Ghostty 1.3.1 は Zig 0.15.2+ を要求 (デフォルト `zig` は 0.13 系)。
      ;; gettext-minimal: build.zig が msgfmt(1) を呼んで .po → .mo を
      ;; 生成するため必要 (なければ "FileNotFound" でビルド失敗)。
-     (list zig-0.15
+     (list zig-0.15-fixed
            pkg-config
            pandoc
            ncurses
            libxml2
            blueprint-compiler
-           gettext-minimal))
+           gettext-minimal
+           patchelf))
     (inputs
      (list bash-minimal
            ;; Core

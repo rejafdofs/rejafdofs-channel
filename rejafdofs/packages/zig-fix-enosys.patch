@@ -1,0 +1,40 @@
+Fall back to pread/pwrite when copy_file_range returns ENOSYS.
+
+Some restricted runtime environments (gVisor, certain seccomp filters,
+older kernels < 4.5) do not implement the copy_file_range(2) syscall and
+return ENOSYS.  Without this patch zig itself aborts with
+`thread N panic: TODO` while symbolising the stack trace in the
+unexpectedErrno path.
+
+Two independent copy_file_range wrappers need the fix:
+
+  - std.posix.copy_file_range — already has a pread/pwrite fallback below
+    the syscall loop, we just need to `break` on .NOSYS the same way
+    it already does on .INVAL and .XDEV.
+
+  - std.os.linux.File.copy_file_range (the thin `CopyFileRangeError`
+    wrapper used by std.fs.File.Writer.sendFile) — returns
+    error.OperationNotSupported so the caller's existing error path
+    is exercised and the writer records `copy_file_range_err` to skip
+    subsequent calls.
+
+--- a/lib/std/posix.zig
++++ b/lib/std/posix.zig
+@@ -6425,6 +6425,7 @@
+                     .PERM => return error.PermissionDenied,
+                     .TXTBSY => return error.SwapFile,
+                     .XDEV => break, // support for cross-filesystem copy added in Linux 5.3, use fallback
++                    .NOSYS => break, // syscall unavailable (gVisor, old kernels, seccomp), use fallback
+                     else => |err| return unexpectedErrno(err),
+                 }
+             }
+--- a/lib/std/os/linux.zig
++++ b/lib/std/os/linux.zig
+@@ -9819,6 +9819,7 @@
+             .PERM => return error.PermissionDenied,
+             .TXTBSY => return error.SwapFile,
+             .XDEV => return error.NotSameFileSystem,
++            .NOSYS => return error.OperationNotSupported,
+             else => |err| return unexpectedErrno(err),
+         }
+     }
