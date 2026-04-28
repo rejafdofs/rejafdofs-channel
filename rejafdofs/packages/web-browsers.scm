@@ -148,7 +148,16 @@
                  ;; 新 GDK enum を含む event を回避する。これがないと
                  ;; ページが空白になる症状が出る (Guix bug#79119,
                  ;; FreeBSD forum で workaround として確認)。
-                 `("WEBKIT_DISABLE_COMPOSITING_MODE" = ("1")))))))))
+                 `("WEBKIT_DISABLE_COMPOSITING_MODE" = ("1"))
+                 ;; "Web process terminated" 対策。WebKit の bubblewrap
+                 ;; sandbox は Guix store の non-standard path 構成
+                 ;; (各 lib が個別 store path) と相性が悪く、renderer
+                 ;; 起動直後にクラッシュすることがある。Sandbox を切って
+                 ;; 安定優先で動かす (security trade-off あり)。
+                 `("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS" = ("1"))
+                 ;; 一部 NSS/SSL バックエンドが古いと web process が
+                 ;; 起動できないので念のため。
+                 `("WEBKIT_FORCE_SANDBOX" = ("0")))))))))
     (native-inputs (list cl-lisp-unit2 sbcl))
     (inputs (list bash-minimal
                   sbcl-alexandria
