@@ -12,6 +12,7 @@ rejafdofs 個人向け Guix チャンネル。以下のパッケージを提供�
 | `sbcl-2.6`       | 2.6.3     | SBCL 2.6 系 (本家 sbcl@2.5.8 の override)                   | 定義のみ                | MIT / PD   |
 | `sbcl-2.4`       | 2.4.11    | SBCL 2.4 系 (nixpkgs と同系統)                              | ✅ bootstrap 成功       | MIT / PD   |
 | `sbcl-2.4.10`    | 2.4.10    | SBCL 2.4.10 (nixpkgs のデフォルトと同版)                    | 定義のみ                | MIT / PD   |
+| `font-hina-mincho` | 1.004   | 古風で可愛い日本語明朝体 (satsuyako 氏)                     | ✅ 成功 (Guix 1.4)      | OFL-1.1    |
 
 ## セットアップ
 
@@ -41,6 +42,7 @@ git clone https://github.com/rejafdofs/rejafdofs-channel.git
 cd rejafdofs-channel
 guix build -L . nyxt
 guix build -L . ninix-kagari
+guix build -L . font-hina-mincho
 ```
 
 ## 実装状況 / 既知の事項
@@ -150,6 +152,26 @@ guix import -i rejafdofs/packages/rust-crates.scm crate \
    `require` が失敗する可能性**があります。将来これらが Guix に入るか、
    本チャンネルで追加定義するかで対応予定。
 
+### font-hina-mincho (`rejafdofs/packages/fonts.scm`)
+
+[satsuyako/Hina-Mincho](https://github.com/satsuyako/Hina-Mincho) を
+そのまま提供します。雛人形にインスパイアされた古風で可愛い日本語
+明朝体で、Google Fonts / Adobe Fonts にも収録されています。
+
+**実装メモ:**
+
+1. 上流リポジトリは git tag / GitHub Release を切っていないため、
+   特定 commit (`1bdbf0b0...`, 2026-03-20) に固定し、Guix 慣例の
+   `(git-version "1.004" "0" commit)` で version 文字列を生成して
+   います。上流が新しいコミットを出した時はこの 2 ヶ所
+   (`commit` / `revision`) と `sha256` を更新してください。
+2. 上流配布の `fonts/ttf/Hina-Mincho-Regular.ttf` をそのまま
+   `share/fonts/truetype/` に配置するだけの `copy-build-system`
+   パッケージです。Glyphs ソース (`.glyphspackage`) からのリビルドは
+   Glyphs 自体が非自由のため行いません。
+3. インストール後 `fc-list | grep -i hina` で
+   `Hina Mincho:style=Regular` が認識されることを確認できます。
+
 ### SSP
 
 ユーザ合意の上、スコープ外とします。Wine 経由のみ動作する
@@ -166,9 +188,17 @@ Guix 2026 (commit `30442f49a581447285bd6f050acec6a9b677f3ad`) 上で確認:
 /gnu/store/rnw5642kygidrfxys2m31ljkr51c726q-ninix-kagari-3.1.1
 ```
 
+Guix 1.4 (substitutes 経由) でも以下を確認:
+
+```
+/gnu/store/764h1sdkf3jf10gna1gnj64vz1shpx09-font-hina-mincho-1.004-0.1bdbf0b
+```
+
 動作確認済み:
 - `nyxt --version` → `Nyxt version 3.11.7`
 - `vrc-get --version` → `vrc-get 1.9.1`
+- `font-hina-mincho` の `share/fonts/truetype/Hina-Mincho-Regular.ttf` が
+  正常に配置されること (TrueType Font data, digitally signed, 16 tables)
 
 ## ライセンス
 
