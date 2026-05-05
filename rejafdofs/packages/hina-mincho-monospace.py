@@ -38,10 +38,13 @@ def glyphspackage_to_glyphs(pkg_path: Path, out_path: Path) -> Path:
       order.plist     - グリフ名の表示順を表す配列。
       UIState.plist   - エディタの UI 状態 (ビルドには不要)。
     """
+    # use_numbers=True を必ず付ける。これが無いと "1.004" や "100" 等が
+    # 文字列で読み込まれ、glyphsLib の setter (setVersionMinor 等) が
+    # int 比較で TypeError を投げる。
     with open(pkg_path / "fontinfo.plist", encoding="utf-8") as f:
-        merged = openstep_plist.load(f)
+        merged = openstep_plist.load(f, use_numbers=True)
     with open(pkg_path / "order.plist", encoding="utf-8") as f:
-        order = openstep_plist.load(f)
+        order = openstep_plist.load(f, use_numbers=True)
     order_idx = {name: i for i, name in enumerate(order)}
 
     glyph_dicts = []
@@ -49,7 +52,7 @@ def glyphspackage_to_glyphs(pkg_path: Path, out_path: Path) -> Path:
         if gpath.suffix != ".glyph":
             continue
         with open(gpath, encoding="utf-8") as f:
-            glyph_dicts.append(openstep_plist.load(f))
+            glyph_dicts.append(openstep_plist.load(f, use_numbers=True))
     # order.plist に無いグリフは末尾にまとめる。
     glyph_dicts.sort(key=lambda g: order_idx.get(g.get("glyphname"), 1 << 30))
     merged["glyphs"] = glyph_dicts
