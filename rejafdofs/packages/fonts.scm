@@ -45,16 +45,22 @@
 ;; Guix 1.4 系の python-glyphslib / python-ufo2ft が伝播する python-fonttools
 ;; (4.28.5) には fontTools.designspaceLib.split が無く、ufo2ft の import 時点で
 ;; ModuleNotFoundError になる。python-fonttools-next (4.37.1) には存在するため、
-;; 入力書き換えで両者を 4.37.1 ベースに作り直す。
-(define %fonttools-next-rewriter
-  (package-input-rewriting
-   `((,python-fonttools . ,python-fonttools-next))))
-
+;; 当該 2 パッケージの propagated-inputs だけを直接差し替える
+;; (package-input-rewriting だと依存グラフ全体を再帰書換して
+;;  Guix プロセスが 16 GB クラスのメモリを食って OOM される)。
 (define python-glyphslib/fonttools-next
-  (%fonttools-next-rewriter python-glyphslib))
+  (package
+    (inherit python-glyphslib)
+    (propagated-inputs
+     (modify-inputs (package-propagated-inputs python-glyphslib)
+       (replace "python-fonttools" python-fonttools-next)))))
 
 (define python-ufo2ft/fonttools-next
-  (%fonttools-next-rewriter python-ufo2ft))
+  (package
+    (inherit python-ufo2ft)
+    (propagated-inputs
+     (modify-inputs (package-propagated-inputs python-ufo2ft)
+       (replace "python-fonttools" python-fonttools-next)))))
 
 (define-public font-hina-mincho
   (let ((commit "1bdbf0b059c16810db0f71657e1ed4c723a3b139")
