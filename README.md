@@ -13,6 +13,7 @@ rejafdofs 個人向け Guix チャンネル。以下のパッケージを提供�
 | `sbcl-2.4`       | 2.4.11    | SBCL 2.4 系 (nixpkgs と同系統)                              | ✅ bootstrap 成功       | MIT / PD   |
 | `sbcl-2.4.10`    | 2.4.10    | SBCL 2.4.10 (nixpkgs のデフォルトと同版)                    | 定義のみ                | MIT / PD   |
 | `font-hina-mincho` | 1.004   | 古風で可愛い日本語明朝体 (satsuyako 氏)                     | ✅ 成功 (Guix 1.4)      | OFL-1.1    |
+| `font-hina-mincho-mono` | 1.004 | Hina Mincho 等幅派生 (半角/全角 2 値、ソースからビルド)    | 定義のみ                | OFL-1.1    |
 
 ## セットアップ
 
@@ -43,6 +44,7 @@ cd rejafdofs-channel
 guix build -L . nyxt
 guix build -L . ninix-kagari
 guix build -L . font-hina-mincho
+guix build -L . font-hina-mincho-mono
 ```
 
 ## 実装状況 / 既知の事項
@@ -171,6 +173,33 @@ guix import -i rejafdofs/packages/rust-crates.scm crate \
    Glyphs 自体が非自由のため行いません。
 3. インストール後 `fc-list | grep -i hina` で
    `Hina Mincho:style=Regular` が認識されることを確認できます。
+
+### font-hina-mincho-mono (`rejafdofs/packages/fonts.scm`)
+
+`font-hina-mincho` と同じ上流コミットから、Glyphs 3 ソース
+`sources/Hina-Mincho.glyphspackage` を **ソースからリビルド** して
+等幅派生を生成するパッケージです。
+
+**実装メモ:**
+
+1. ビルドは `python-fontmake` (内部で `python-glyphslib` が
+   `.glyphspackage` を UFO/designspace に変換) → `-o ttf` で
+   TrueType を出力 → 付属の `hina-mincho-monospace.py` が
+   `python-fonttools` 経由で `hmtx` のアドバンス幅を
+   半角=UPM/2 (=500)・全角=UPM (=1000) の 2 値に丸め、
+   `OS/2.panose.bProportion=9` と `name` テーブル
+   (Family=`Hina Mincho Mono`, PostScript=`HinaMinchoMono-Regular`)
+   を書き換えて等幅化します。Glyphs 本体 (非自由) は **不要**。
+2. 半角/全角 2 値であって全グリフ単一 advance ではないため、
+   `post.isFixedPitch` は **立てません** (誤情報になるため)。
+   端末等で「等幅」と認識させたいアプリには `fc-match` の
+   `:spacing=mono` ではなく `:family=Hina Mincho Mono` で指定してください。
+3. ファミリ名を変えてあるため `font-hina-mincho` と同時インストールしても
+   名前空間で衝突しません。
+4. `fontmake` がネット越しのキャッシュを引かないことを保証するため、
+   ビルド phase は `--output-dir build` のみを指定し、その他は素のまま
+   動かしています。再現性問題が出た場合は phase 内に
+   `setenv "SOURCE_DATE_EPOCH"` を追加してください。
 
 ### SSP
 
