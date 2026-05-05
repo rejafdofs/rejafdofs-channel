@@ -28,6 +28,32 @@ FULL_NAME = "Hina Mincho Mono Regular"
 POSTSCRIPT_NAME = "HinaMinchoMono-Regular"
 
 
+def _dedup_custom_parameters(node) -> None:
+    """`customParameters` の重複 (同名複数) を再帰的に潰す。
+
+    Glyphs エディタは customParameters の重複を許容し、新しい順 (リスト
+    末尾) の値で上書きする。一方 glyphsLib 6.0.7 は重複に対して
+    `RuntimeError: More than one value for this customParameter` を
+    投げるため、ファイルを glyphsLib に渡す前に正規化する。
+    Hina Mincho では fontMaster の hheaLineGap が 350 と 0 の 2 回
+    現れるのが既知。
+    """
+    if isinstance(node, dict):
+        if "customParameters" in node and isinstance(node["customParameters"], list):
+            seen = {}
+            for entry in node["customParameters"]:
+                if isinstance(entry, dict) and "name" in entry:
+                    seen[entry["name"]] = entry  # 後勝ち
+                else:
+                    seen[id(entry)] = entry  # 名無しはそのまま残す
+            node["customParameters"] = list(seen.values())
+        for value in node.values():
+            _dedup_custom_parameters(value)
+    elif isinstance(node, list):
+        for item in node:
+            _dedup_custom_parameters(item)
+
+
 def glyphspackage_to_glyphs(pkg_path: Path, out_path: Path) -> Path:
     """`.glyphspackage` ディレクトリを単一の `.glyphs` plist に結合する。
 
@@ -56,6 +82,8 @@ def glyphspackage_to_glyphs(pkg_path: Path, out_path: Path) -> Path:
     # order.plist に無いグリフは末尾にまとめる。
     glyph_dicts.sort(key=lambda g: order_idx.get(g.get("glyphname"), 1 << 30))
     merged["glyphs"] = glyph_dicts
+
+    _dedup_custom_parameters(merged)
 
     with open(out_path, "w", encoding="utf-8") as f:
         openstep_plist.dump(merged, f)
