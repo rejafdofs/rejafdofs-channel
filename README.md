@@ -14,6 +14,7 @@ rejafdofs 個人向け Guix チャンネル。以下のパッケージを提供�
 | `sbcl-2.4.10`    | 2.4.10    | SBCL 2.4.10 (nixpkgs のデフォルトと同版)                    | 定義のみ                | MIT / PD   |
 | `font-hina-mincho` | 1.004   | 古風で可愛い日本語明朝体 (satsuyako 氏)                     | ✅ 成功 (Guix 1.4)      | OFL-1.1    |
 | `font-hina-mincho-mono` | 1.004 | Hina Mincho ターミナル用等幅派生 (ソースからビルド)        | ✅ 成功 (Guix 1.4)      | OFL-1.1    |
+| `kanata`         | 1.11.0    | 多層キーマップ対応のクロスプラットフォーム キーリマッパ     | crate-inputs 整備済 (下記) | LGPL-3     |
 
 ## セットアップ
 
@@ -227,6 +228,52 @@ guix import -i rejafdofs/packages/rust-crates.scm crate \
 ASCII (' ' 'A' 'a' '0' '~') / Latin extended ('©') / 半角カナ (ｱ) → 500
 全角 Latin (Ａ) / ひらがな (あ) / 漢字 (中, 愛) / カタカナ (ア)   → 1000
 Ambiguous (罫線 ─, em-dash —, ギリシャ α, キリル Ё)              → 1000
+```
+
+### kanata (`rejafdofs/packages/kanata.scm`)
+
+[jtroo/kanata](https://github.com/jtroo/kanata) は QMK ライクな多層
+キーマップをソフトウェアで実現するキーリマッパ。`kanata.scm` は
+v1.11.0 の binary クレート (`kanata`) のみをビルドする
+`cargo-build-system` パッケージ定義です。
+
+**実装メモ:**
+
+1. 上流 `Cargo.toml` の `edition = "2024"` は Rust 1.85+ で安定化
+   されたエディション。Guix 本家の rust が 1.85 未満の段階では
+   `error[E0658]: edition 2024 is unstable` でビルドできないため、
+   新しい Guix (rust ≥ 1.85 を含む 2025 春以降) を必須とする。
+2. デフォルト feature の `win_sendinput_send_scancodes` は
+   `kanata-parser` 側の cfg を立てるだけで、Windows 専用の native
+   依存 (`winapi` / `native-windows-gui` 等) は Cargo 側で
+   `cfg(target_os = "windows")` ゲートされている。Linux 上では
+   そのままデフォルト feature でビルドできる。
+3. `--features gui` (Windows GUI tray アプリ) と
+   `--features interception_driver` (Windows カーネルドライバ) は
+   非 Linux 限定なので有効化しない。
+4. 実行時には `/dev/uinput` への書き込みと `/dev/input/event*` の
+   読み取り権限が必要。`udev` ルールや `setcap` 等の運用設定は
+   パッケージ側では行わない (`man udev` 参照)。
+
+**Rust crate 依存:**
+
+`rejafdofs/packages/rust-crates.scm` の `define-cargo-inputs` に
+`(kanata => (list ...))` 節として 237 個の crate を登録済み (うち 71
+個は vrc-get と共通)。新規追加した 166 個の `crate-source` 定義も
+同ファイルにマージしている。
+
+ハッシュ生成は `Cargo.lock` の `[[package]]` から `checksum` を取り
+出して nix-base32 エンコードしている。Guix 2025+ の `guix import
+crate -f Cargo.lock kanata` を流す方法でも完全に等価な結果になる。
+
+```sh
+# 上流が新バージョンを出した場合の更新手順 (Guix 2025+ 環境):
+git clone --branch vX.Y.Z --depth 1 \
+  https://github.com/jtroo/kanata /tmp/kanata
+guix import -i rejafdofs/packages/rust-crates.scm crate \
+  -f /tmp/kanata/Cargo.lock kanata
+# 生成された (kanata => (list ...)) ブロックで既存節を置換し、
+# 新バージョンの crate-source 定義を本体にマージする。
 ```
 
 ### SSP
