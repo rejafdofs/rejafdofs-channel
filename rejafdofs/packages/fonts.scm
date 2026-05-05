@@ -36,10 +36,25 @@
   #:use-module (guix git-download)
   #:use-module (guix build-system copy)
   #:use-module (guix build-system gnu)
+  #:use-module (guix utils)
   #:use-module (gnu packages fontutils)
   #:use-module (gnu packages python)
   #:use-module (gnu packages python-xyz)
   #:use-module ((guix licenses) #:prefix license:))
+
+;; Guix 1.4 系の python-glyphslib / python-ufo2ft が伝播する python-fonttools
+;; (4.28.5) には fontTools.designspaceLib.split が無く、ufo2ft の import 時点で
+;; ModuleNotFoundError になる。python-fonttools-next (4.37.1) には存在するため、
+;; 入力書き換えで両者を 4.37.1 ベースに作り直す。
+(define %fonttools-next-rewriter
+  (package-input-rewriting
+   `((,python-fonttools . ,python-fonttools-next))))
+
+(define python-glyphslib/fonttools-next
+  (%fonttools-next-rewriter python-glyphslib))
+
+(define python-ufo2ft/fonttools-next
+  (%fonttools-next-rewriter python-ufo2ft))
 
 (define-public font-hina-mincho
   (let ((commit "1bdbf0b059c16810db0f71657e1ed4c723a3b139")
@@ -121,9 +136,13 @@ Google Fonts および Adobe Fonts に収録されている。")
                             "AUTHORS.txt" "CONTRIBUTORS.txt"))))))))
     (native-inputs
      (list python-wrapper
-           python-glyphslib
-           python-ufo2ft
-           python-fonttools))
+           ;; ※ Guix 1.4 同梱の python-glyphslib / python-ufo2ft は
+           ;; python-fonttools 4.28.5 を伝播し、ufo2ft 2.28.0 が要求する
+           ;; fontTools.designspaceLib.split が存在しない。4.37.1 系
+           ;; (python-fonttools-next) に差し替えた派生を使う。
+           python-glyphslib/fonttools-next
+           python-ufo2ft/fonttools-next
+           python-fonttools-next))
     (synopsis "Hina Mincho の等幅派生 (半角/全角 2 値、ソースからビルド)")
     (description
      "Hina Mincho を日本語フォント慣習の \"等幅\" 形式 (半角 = UPM/2、
