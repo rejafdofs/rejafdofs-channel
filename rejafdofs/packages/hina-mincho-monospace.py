@@ -11,11 +11,16 @@
   2. glyphsLib で .glyphs を読み込み designspace + UFO に変換。
   3. ufo2ft.compileTTF で UFO → fontTools.TTFont を生成
      (= fontmake が内部でやっているのと同じ呼び出しを直接行う)。
-  4. fontTools の hmtx を半角=UPM/2、全角=UPM の 2 値に丸めて
-     等幅化、name と OS/2 を更新して保存。
+  4. ターミナル表示用の等幅化を fontTools で実施:
+     - 各グリフの advance を Unicode East Asian Width で
+       半角 (UPM/2) / 全角 (UPM) のいずれかに丸める
+     - post.isFixedPitch=1 / OS/2.panose.bProportion=9 /
+       OS/2.xAvgCharWidth=半角値 を立て fontconfig に monospace 認識させる
+     - name テーブルを `Hina Mincho Mono` に書き換える
 """
 import sys
 import tempfile
+import unicodedata
 from pathlib import Path
 
 import glyphsLib
@@ -104,22 +109,53 @@ def build_ttf(glyphs_source_path: str):
     return compileTTF(ufo)
 
 
+def _build_target_widths(font, half: int, full: int) -> dict:
+    """各グリフの target advance を Unicode East Asian Width で決める。
+
+    ターミナル表示が目的なので「1 セル = 半角、2 セル = 全角」になるよう
+    Unicode の EAW プロパティで判定する:
+      - F (Fullwidth) / W (Wide) / A (Ambiguous) → 全角 (= 2 セル)
+        Ambiguous (罫線・記号類) は CJK ロケールのターミナル慣例どおり
+        全角扱いにする。Hina Mincho は日本語フォントなので妥当。
+      - Na (Narrow) / H (Halfwidth) / N (Neutral) → 半角 (= 1 セル)
+        Mincho の大文字 Latin は元 advance が 700+ で広いが、ターミナル
+        では半角扱いを強制する (元設計を尊重した結果セル幅が崩れる方が
+        ターミナル用途では致命的)。
+    cmap に無いグリフ (合字, 異体字, .alt, .sub 系など) は元 advance を
+    閾値で丸める fallback。
+    """
+    cmap = font.getBestCmap()
+    glyph_to_cps: dict = {}
+    for cp, gname in cmap.items():
+        glyph_to_cps.setdefault(gname, []).append(cp)
+
+    threshold = (half + full) // 2
+    targets = {}
+    for gname, (adv, _) in font["hmtx"].metrics.items():
+        cps = glyph_to_cps.get(gname)
+        if cps:
+            is_full = any(
+                unicodedata.east_asian_width(chr(cp)) in ("F", "W", "A")
+                for cp in cps
+            )
+            targets[gname] = full if is_full else half
+        elif adv == 0:
+            targets[gname] = 0
+        else:
+            targets[gname] = full if adv >= threshold else half
+    return targets
+
+
 def monospacify(font) -> None:
-    """hmtx の advance を半角/全角の 2 値に丸めて name/OS2 を書き換える。"""
+    """hmtx の advance を半角/全角の 2 値に丸めて name/OS2/post を書き換える。"""
     upm = font["head"].unitsPerEm  # Hina Mincho は 1000
     half, full = upm // 2, upm
-    # プロポーショナル Latin (~200..700) は半角に、CJK (=1000) は全角に倒れる
-    threshold = (half + full) // 2
+    targets = _build_target_widths(font, half, full)
 
     hmtx = font["hmtx"]
     new_metrics = {}
     for name, (adv, lsb) in hmtx.metrics.items():
-        if adv == 0:
-            target = 0
-        elif adv < threshold:
-            target = half
-        else:
-            target = full
+        target = targets[name]
         # グリフを左右中央へ寄せる (LSB を半分だけずらす)
         if target and target != adv:
             lsb += (target - adv) // 2
@@ -138,10 +174,17 @@ def monospacify(font) -> None:
         name_tbl.setName(value, name_id, 3, 1, 0x409)
         name_tbl.setName(value, name_id, 1, 0, 0)
 
-    # OS/2 panose の bProportion = 9 (Monospaced)。
-    # 厳密には半角/全角 2 値なので post.isFixedPitch は立てない
-    # (= "全グリフ単一 advance" を意味するため誤情報になる)。
+    # ターミナル (fontconfig :spacing=mono / Pango monospace) で拾われる
+    # ように post.isFixedPitch と OS/2.panose を立てる。
+    # 半角/全角 2 値なので厳密には "単一 advance" ではないが、CJK 等幅
+    # フォント (Source Han Mono, BIZ UDGothic, HackGen, UDEV Gothic 等) は
+    # 一様にこのフラグを立てる慣習に従う。さもないと fontconfig がこの
+    # フォントを monospace ファミリとして認識せず、ターミナルから
+    # `Hina Mincho Mono` を選んでも fallback されて意味が無い。
+    font["post"].isFixedPitch = 1
     font["OS/2"].panose.bProportion = 9
+    # OS/2.xAvgCharWidth はターミナルでの 1 セル幅基準。半角に合わせる。
+    font["OS/2"].xAvgCharWidth = half
 
 
 def main(src_path: str, dst_path: str) -> None:
