@@ -36,6 +36,7 @@
   #:use-module (guix git-download)
   #:use-module (guix build-system copy)
   #:use-module (guix build-system gnu)
+  #:use-module (gnu packages fontutils)
   #:use-module (gnu packages python)
   #:use-module (gnu packages python-xyz)
   #:use-module ((guix licenses) #:prefix license:))
@@ -96,25 +97,16 @@ Google Fonts および Adobe Fonts に収録されている。")
           (delete 'strip)
           (replace 'build
             (lambda _
+              ;; ソースの .glyphspackage を読み込んで等幅 TTF を吐くまでを
+              ;; 1 つの Python スクリプトで行う (glyphsLib + ufo2ft +
+              ;; fontTools)。fontmake パッケージが Guix 1.4 系に存在しない
+              ;; ため、fontmake が内部でやっている GSFont→designspace→
+              ;; compileTTF のパイプラインを直接呼んでいる。
               (mkdir-p "build")
-              ;; fontmake は内部で glyphsLib を呼んで .glyphspackage を読む。
-              ;; -o ttf で TrueType アウトラインの .ttf を吐く
-              ;; (CFF を使う -o otf より日本語環境のヒンティング/レンダリング
-              ;;  事故が少ないため)。
-              (invoke "fontmake"
-                      "-g" "sources/Hina-Mincho.glyphspackage"
-                      "-o" "ttf"
-                      "--output-dir" "build")))
-          (add-after 'build 'monospacify
-            (lambda _
-              ;; fontmake の出力ファイル名は Glyphs ソースの familyName /
-              ;; styleName から決まる。1 ファイルしか出ないはずだが、
-              ;; 名前を仮定せず find-files で拾う。
-              (let ((in (car (find-files "build" "\\.ttf$")))
-                    (out "build/HinaMinchoMono-Regular.ttf"))
-                (invoke "python3"
-                        #$(local-file "hina-mincho-monospace.py")
-                        in out))))
+              (invoke "python3"
+                      #$(local-file "hina-mincho-monospace.py")
+                      "sources/Hina-Mincho.glyphspackage"
+                      "build/HinaMinchoMono-Regular.ttf")))
           (replace 'install
             (lambda _
               (let ((ttf (string-append #$output "/share/fonts/truetype"))
@@ -129,9 +121,9 @@ Google Fonts および Adobe Fonts に収録されている。")
                             "AUTHORS.txt" "CONTRIBUTORS.txt"))))))))
     (native-inputs
      (list python-wrapper
-           python-fontmake
-           python-fonttools
-           python-glyphslib))
+           python-glyphslib
+           python-ufo2ft
+           python-fonttools))
     (synopsis "Hina Mincho の等幅派生 (半角/全角 2 値、ソースからビルド)")
     (description
      "Hina Mincho を日本語フォント慣習の \"等幅\" 形式 (半角 = UPM/2、

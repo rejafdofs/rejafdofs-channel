@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Hina Mincho 等幅化ポストプロセス。
+"""Hina Mincho ソースから等幅 TTF をビルドする。
 
-fontmake が `.glyphspackage` から書き出した可変幅 TTF を読み込み、
-各グリフの advance width を「半角 = UPM/2」「全角 = UPM」の 2 値に
-丸めて、日本語フォントで言う "等幅" (= 半角/全角 2 種固定) に変換する。
+  python3 hina-mincho-monospace.py <source.glyphspackage> <output.ttf>
 
-  python3 hina-mincho-monospace.py <input.ttf> <output.ttf>
+処理手順:
+  1. glyphsLib で .glyphspackage を読み込み designspace + UFO に変換。
+  2. ufo2ft.compileTTF で UFO → fontTools.TTFont を生成
+     (= fontmake が内部でやっているのと同じ呼び出しを直接行う。
+      fontmake パッケージが Guix 1.4 系に無いためここで代替する)。
+  3. fontTools の hmtx を半角=UPM/2、全角=UPM の 2 値に丸めて
+     等幅化、name と OS/2 を更新して保存。
 """
 import sys
 
-from fontTools.ttLib import TTFont
+import glyphsLib
+from ufo2ft import compileTTF
 
 
 FAMILY = "Hina Mincho Mono"
@@ -18,12 +23,20 @@ FULL_NAME = "Hina Mincho Mono Regular"
 POSTSCRIPT_NAME = "HinaMinchoMono-Regular"
 
 
-def monospacify(src_path: str, dst_path: str) -> None:
-    font = TTFont(src_path)
-    upm = font["head"].unitsPerEm
+def build_ttf(glyphs_source_path: str):
+    """`.glyphspackage` を読んで fontTools.TTFont を返す。"""
+    gs_font = glyphsLib.GSFont(glyphs_source_path)
+    ds = glyphsLib.to_designspace(gs_font)
+    # Hina Mincho は単一マスター。先頭ソースの UFO を使う。
+    ufo = ds.sources[0].font
+    return compileTTF(ufo)
+
+
+def monospacify(font) -> None:
+    """hmtx の advance を半角/全角の 2 値に丸めて name/OS2 を書き換える。"""
+    upm = font["head"].unitsPerEm  # Hina Mincho は 1000
     half, full = upm // 2, upm
-    # 半角と全角のちょうど中点。Hina Mincho の UPM=1000 では 750。
-    # プロポーショナル Latin (~200..700) は半角に、CJK (=1000) は全角に倒れる。
+    # プロポーショナル Latin (~200..700) は半角に、CJK (=1000) は全角に倒れる
     threshold = (half + full) // 2
 
     hmtx = font["hmtx"]
@@ -41,14 +54,14 @@ def monospacify(src_path: str, dst_path: str) -> None:
         new_metrics[name] = (target, lsb)
     hmtx.metrics = new_metrics
 
-    # name テーブル書き換え。Windows (3,1,0x409) と Mac (1,0,0) の両方に
-    # 英語名を入れておけば fc-list / Pango / CoreText いずれも拾える。
+    # name 書き換え。Windows (3,1,0x409) と Mac (1,0,0) の両方に英語名を入れて
+    # おけば fc-list / Pango / CoreText いずれも拾える。
     name_tbl = font["name"]
     for name_id, value in (
-        (1, FAMILY),          # Family
-        (4, FULL_NAME),       # Full name
-        (6, POSTSCRIPT_NAME), # PostScript name
-        (16, FAMILY),         # Typographic Family
+        (1, FAMILY),
+        (4, FULL_NAME),
+        (6, POSTSCRIPT_NAME),
+        (16, FAMILY),
     ):
         name_tbl.setName(value, name_id, 3, 1, 0x409)
         name_tbl.setName(value, name_id, 1, 0, 0)
@@ -58,10 +71,14 @@ def monospacify(src_path: str, dst_path: str) -> None:
     # (= "全グリフ単一 advance" を意味するため誤情報になる)。
     font["OS/2"].panose.bProportion = 9
 
+
+def main(src_path: str, dst_path: str) -> None:
+    font = build_ttf(src_path)
+    monospacify(font)
     font.save(dst_path)
 
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
-        sys.exit(f"usage: {sys.argv[0]} <input.ttf> <output.ttf>")
-    monospacify(sys.argv[1], sys.argv[2])
+        sys.exit(f"usage: {sys.argv[0]} <source.glyphspackage> <output.ttf>")
+    main(sys.argv[1], sys.argv[2])
