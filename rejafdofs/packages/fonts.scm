@@ -148,7 +148,11 @@ Google Fonts および Adobe Fonts に収録されている。")
            ;; (python-fonttools-next) に差し替えた派生を使う。
            python-glyphslib/fonttools-next
            python-ufo2ft/fonttools-next
-           python-fonttools-next))
+           python-fonttools-next
+           ;; .glyphspackage (= ディレクトリ形式の Glyphs 3 ソース) を
+           ;; 単一 .glyphs に結合する前処理で使う。glyphsLib 6.0.7 自体は
+           ;; .glyphspackage を直接読めない (6.1+ で対応) ため必須。
+           python-openstep-plist))
     (synopsis "Hina Mincho の等幅派生 (半角/全角 2 値、ソースからビルド)")
     (description
      "Hina Mincho を日本語フォント慣習の \"等幅\" 形式 (半角 = UPM/2、

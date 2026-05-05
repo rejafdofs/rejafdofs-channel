@@ -5,16 +5,21 @@
   python3 hina-mincho-monospace.py <source.glyphspackage> <output.ttf>
 
 処理手順:
-  1. glyphsLib で .glyphspackage を読み込み designspace + UFO に変換。
-  2. ufo2ft.compileTTF で UFO → fontTools.TTFont を生成
-     (= fontmake が内部でやっているのと同じ呼び出しを直接行う。
-      fontmake パッケージが Guix 1.4 系に無いためここで代替する)。
-  3. fontTools の hmtx を半角=UPM/2、全角=UPM の 2 値に丸めて
+  1. .glyphspackage (= ディレクトリ形式の Glyphs 3 ソース) を 1 ファイルの
+     .glyphs (= openstep plist) に結合する。Guix 1.4 同梱の glyphsLib 6.0.7
+     は .glyphspackage を直接読めない (6.1+ で対応) ため、ここで前処理する。
+  2. glyphsLib で .glyphs を読み込み designspace + UFO に変換。
+  3. ufo2ft.compileTTF で UFO → fontTools.TTFont を生成
+     (= fontmake が内部でやっているのと同じ呼び出しを直接行う)。
+  4. fontTools の hmtx を半角=UPM/2、全角=UPM の 2 値に丸めて
      等幅化、name と OS/2 を更新して保存。
 """
 import sys
+import tempfile
+from pathlib import Path
 
 import glyphsLib
+import openstep_plist
 from ufo2ft import compileTTF
 
 
@@ -23,9 +28,45 @@ FULL_NAME = "Hina Mincho Mono Regular"
 POSTSCRIPT_NAME = "HinaMinchoMono-Regular"
 
 
+def glyphspackage_to_glyphs(pkg_path: Path, out_path: Path) -> Path:
+    """`.glyphspackage` ディレクトリを単一の `.glyphs` plist に結合する。
+
+    .glyphspackage の構成:
+      fontinfo.plist  - フォントレベルのメタデータ (.appVersion, familyName,
+                        masters, instances ...)。`glyphs` キーは含まない。
+      glyphs/*.glyph  - 1 グリフ 1 ファイルの plist。
+      order.plist     - グリフ名の表示順を表す配列。
+      UIState.plist   - エディタの UI 状態 (ビルドには不要)。
+    """
+    with open(pkg_path / "fontinfo.plist", encoding="utf-8") as f:
+        merged = openstep_plist.load(f)
+    with open(pkg_path / "order.plist", encoding="utf-8") as f:
+        order = openstep_plist.load(f)
+    order_idx = {name: i for i, name in enumerate(order)}
+
+    glyph_dicts = []
+    for gpath in sorted((pkg_path / "glyphs").iterdir()):
+        if gpath.suffix != ".glyph":
+            continue
+        with open(gpath, encoding="utf-8") as f:
+            glyph_dicts.append(openstep_plist.load(f))
+    # order.plist に無いグリフは末尾にまとめる。
+    glyph_dicts.sort(key=lambda g: order_idx.get(g.get("glyphname"), 1 << 30))
+    merged["glyphs"] = glyph_dicts
+
+    with open(out_path, "w", encoding="utf-8") as f:
+        openstep_plist.dump(merged, f)
+    return out_path
+
+
 def build_ttf(glyphs_source_path: str):
-    """`.glyphspackage` を読んで fontTools.TTFont を返す。"""
-    gs_font = glyphsLib.GSFont(glyphs_source_path)
+    """`.glyphs` または `.glyphspackage` を読んで fontTools.TTFont を返す。"""
+    src = Path(glyphs_source_path)
+    if src.suffix == ".glyphspackage":
+        tmp_glyphs = Path(tempfile.mkdtemp()) / (src.stem + ".glyphs")
+        glyphspackage_to_glyphs(src, tmp_glyphs)
+        src = tmp_glyphs
+    gs_font = glyphsLib.GSFont(str(src))
     ds = glyphsLib.to_designspace(gs_font)
     # Hina Mincho は単一マスター。先頭ソースの UFO を使う。
     ufo = ds.sources[0].font
@@ -82,3 +123,4 @@ if __name__ == "__main__":
     if len(sys.argv) != 3:
         sys.exit(f"usage: {sys.argv[0]} <source.glyphspackage> <output.ttf>")
     main(sys.argv[1], sys.argv[2])
+
