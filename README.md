@@ -14,7 +14,7 @@ rejafdofs 個人向け Guix チャンネル。以下のパッケージを提供�
 | `sbcl-2.4.10`    | 2.4.10    | SBCL 2.4.10 (nixpkgs のデフォルトと同版)                    | 定義のみ                | MIT / PD   |
 | `font-hina-mincho` | 1.004   | 古風で可愛い日本語明朝体 (satsuyako 氏)                     | ✅ 成功 (Guix 1.4)      | OFL-1.1    |
 | `font-hina-mincho-mono` | 1.004 | Hina Mincho ターミナル用等幅派生 (ソースからビルド)        | ✅ 成功 (Guix 1.4)      | OFL-1.1    |
-| `kanata`         | 1.11.0    | 多層キーマップ対応のクロスプラットフォーム キーリマッパ     | 定義のみ (下記)         | LGPL-3     |
+| `kanata`         | 1.11.0    | 多層キーマップ対応のクロスプラットフォーム キーリマッパ     | crate-inputs 整備済 (下記) | LGPL-3     |
 
 ## セットアップ
 
@@ -255,22 +255,25 @@ v1.11.0 の binary クレート (`kanata`) のみをビルドする
    読み取り権限が必要。`udev` ルールや `setcap` 等の運用設定は
    パッケージ側では行わない (`man udev` 参照)。
 
-**Rust crate 依存の生成:**
+**Rust crate 依存:**
 
-vrc-get と同様、`Cargo.lock` から `guix import crate` で生成した
-crate 定義を `rejafdofs/packages/rust-crates.scm` の
-`define-cargo-inputs` テーブルに `(kanata => (list ...))` として
-追記する必要があります。**現状この追記はまだ行われていない**ため、
-`guix build -L . kanata` は cargo-inputs 検索で失敗します。
+`rejafdofs/packages/rust-crates.scm` の `define-cargo-inputs` に
+`(kanata => (list ...))` 節として 237 個の crate を登録済み (うち 71
+個は vrc-get と共通)。新規追加した 166 個の `crate-source` 定義も
+同ファイルにマージしている。
+
+ハッシュ生成は `Cargo.lock` の `[[package]]` から `checksum` を取り
+出して nix-base32 エンコードしている。Guix 2025+ の `guix import
+crate -f Cargo.lock kanata` を流す方法でも完全に等価な結果になる。
 
 ```sh
-git clone --branch v1.11.0 --depth 1 \
+# 上流が新バージョンを出した場合の更新手順 (Guix 2025+ 環境):
+git clone --branch vX.Y.Z --depth 1 \
   https://github.com/jtroo/kanata /tmp/kanata
 guix import -i rejafdofs/packages/rust-crates.scm crate \
   -f /tmp/kanata/Cargo.lock kanata
-# 生成された (kanata => (list ...)) ブロックを既存の
-# define-cargo-inputs に追記する。crate-source 定義は vrc-get で
-# 既に存在するバージョンを除いてマージする。
+# 生成された (kanata => (list ...)) ブロックで既存節を置換し、
+# 新バージョンの crate-source 定義を本体にマージする。
 ```
 
 ### SSP

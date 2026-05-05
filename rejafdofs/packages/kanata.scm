@@ -29,24 +29,13 @@
 ;;;    `/dev/input/event*` への読み取り権限が必要。systemd-run / sudo /
 ;;;    `setcap cap_sys_admin+ep` 等の運用は本パッケージのスコープ外。
 ;;;
-;;; === Rust crate 依存の生成 ===
+;;; === Rust crate 依存 ===
 ;;;
-;;; 約 200 個の crate 依存は `rejafdofs/packages/rust-crates.scm` の
+;;; 237 個の crate 依存は `rejafdofs/packages/rust-crates.scm` の
 ;;; `define-cargo-inputs` テーブルに `(kanata => (list ...))` として
-;;; 追加する必要があります。vrc-get と同じ手順で再生成してください。
-;;;
-;;; ```sh
-;;; git clone --branch v1.11.0 --depth 1 \
-;;;   https://github.com/jtroo/kanata /tmp/kanata
-;;; guix import -i rejafdofs/packages/rust-crates.scm crate \
-;;;   -f /tmp/kanata/Cargo.lock kanata
-;;; # 生成された (kanata => ...) 節を rust-crates.scm 末尾の
-;;; # define-cargo-inputs に追記し、新しい crate-source 定義は本体に
-;;; # マージする (vrc-get と重複するバージョンは省略可)。
-;;; ```
-;;;
-;;; 上記が未完了の段階では `guix build -L . kanata` は cargo-inputs の
-;;; `kanata` キーが見つからずに失敗します。
+;;; 既に登録済みです (うち 71 個は vrc-get と共通のため再利用、新規は
+;;; 166 個)。上流の `Cargo.lock` が変わった時の再生成手順は同ファイル
+;;; の冒頭コメントを参照してください。
 
 (define-module (rejafdofs packages kanata)
   #:use-module (guix packages)
