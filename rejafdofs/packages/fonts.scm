@@ -3,9 +3,8 @@
 ;;; 提供パッケージ:
 ;;;   - font-hina-mincho      : 古風で可愛い日本語明朝体 (satsuyako 氏)
 ;;;   - font-hina-mincho-mono : 上記の等幅 (半角/全角 2 値) 派生。
-;;;                             ソース (.glyphspackage) から fontmake で
-;;;                             ビルドし、fontTools でアドバンス幅を
-;;;                             丸めて等幅化する。
+;;;                             上流配布 TTF を fontTools で advance/name
+;;;                             だけ書き換えて等幅化する。
 ;;;
 ;;; 上流: https://github.com/satsuyako/Hina-Mincho  (SIL OFL 1.1)
 ;;;
@@ -23,12 +22,13 @@
 ;;;   copy-build-system パッケージ。
 ;;;
 ;;; font-hina-mincho-mono:
-;;;   上流が同梱している Glyphs 3 ソース (sources/Hina-Mincho.glyphspackage)
-;;;   から python-fontmake (内部で python-glyphslib が .glyphspackage を
-;;;   UFO/designspace に変換) で TTF をビルドし、付属スクリプト
-;;;   hina-mincho-monospace.py が fontTools 経由で hmtx/OS2/name を書き換え
-;;;   半角=500/全角=1000 の等幅 TTF として吐き出す。Glyphs 本体 (非自由)
-;;;   は不要。
+;;;   上流配布の TTF を fontTools で読み込み、各グリフの advance を
+;;;   Unicode East Asian Width で半角=500/全角=1000 に丸め、name/OS2/post
+;;;   を書き換えて等幅 TTF として吐き出す。Glyphs ソース
+;;;   (`.glyphspackage`) からの再ビルド経路は使わない (glyphsLib 6.1+ が
+;;;   Hina Mincho の `_part.*` スマートコンポーネントの古い軸メタで
+;;;   バージョン依存に破綻するため)。outline は上流ビルド済み TTF を
+;;;   そのまま使うので Glyphs 本体 (非自由) も glyphsLib も不要。
 
 (define-module (rejafdofs packages fonts)
   #:use-module (guix packages)
@@ -91,22 +91,17 @@ Google Fonts および Adobe Fonts に収録されている。")
       #:tests? #f
       #:phases
       #~(modify-phases %standard-phases
-          ;; .glyphspackage → UFO/designspace → TTF を fontmake が一発で行う。
+          ;; 上流配布 TTF を読み込んで等幅 TTF を吐くだけ。
           ;; configure / check / strip は不要。
           (delete 'configure)
           (delete 'check)
           (delete 'strip)
           (replace 'build
             (lambda _
-              ;; ソースの .glyphspackage を読み込んで等幅 TTF を吐くまでを
-              ;; 1 つの Python スクリプトで行う (glyphsLib + ufo2ft +
-              ;; fontTools)。fontmake パッケージが Guix 1.4 系に存在しない
-              ;; ため、fontmake が内部でやっている GSFont→designspace→
-              ;; compileTTF のパイプラインを直接呼んでいる。
               (mkdir-p "build")
               (invoke "python3"
                       #$(local-file "hina-mincho-monospace.py")
-                      "sources/Hina-Mincho.glyphspackage"
+                      "fonts/ttf/Hina-Mincho-Regular.ttf"
                       "build/HinaMinchoMono-Regular.ttf")))
           (replace 'install
             (lambda _
@@ -122,20 +117,15 @@ Google Fonts および Adobe Fonts に収録されている。")
                             "AUTHORS.txt" "CONTRIBUTORS.txt"))))))))
     (native-inputs
      (list python-wrapper
-           python-glyphslib
-           python-ufo2ft
-           python-fonttools
-           ;; .glyphspackage (= ディレクトリ形式の Glyphs 3 ソース) を
-           ;; 単一 .glyphs に結合する前処理で使う。glyphsLib 6.0.7 自体は
-           ;; .glyphspackage を直接読めない (6.1+ で対応) ため必須。
-           python-openstep-plist))
-    (synopsis "Hina Mincho の等幅派生 (半角/全角 2 値、ソースからビルド)")
+           ;; advance/name/OS2/post の書き換えに fontTools.ttLib のみ使用。
+           python-fonttools))
+    (synopsis "Hina Mincho の等幅派生 (半角/全角 2 値、上流 TTF を加工)")
     (description
      "Hina Mincho を日本語フォント慣習の \"等幅\" 形式 (半角 = UPM/2、
-全角 = UPM の 2 値固定) に変換した派生フォント。上流が同梱する
-Glyphs 3 ソース @file{sources/Hina-Mincho.glyphspackage} から
-@command{fontmake} (内部で glyphsLib が UFO/designspace に変換) で
-TTF をビルドし、付属スクリプトが fontTools で hmtx と name テーブルを
-書き換えて等幅化する。Glyphs 本体は不要。フォントファミリ名は
-@code{Hina Mincho Mono} として登録されるため、@code{font-hina-mincho}
-と同時にインストールしても衝突しない。")))
+全角 = UPM の 2 値固定) に変換した派生フォント。上流配布の
+@file{fonts/ttf/Hina-Mincho-Regular.ttf} を fontTools で読み込み、
+各グリフの advance を Unicode East Asian Width で半角/全角に丸め、
+@code{name} / @code{OS/2} / @code{post} を書き換えて等幅化する。
+outline は上流ビルド済みものをそのまま使うため Glyphs 本体は不要。
+フォントファミリ名は @code{Hina Mincho Mono} として登録されるため、
+@code{font-hina-mincho} と同時にインストールしても衝突しない。")))
