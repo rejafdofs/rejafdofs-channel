@@ -13,7 +13,7 @@ rejafdofs 個人向け Guix チャンネル。以下のパッケージを提供�
 | `sbcl-2.4`       | 2.4.11    | SBCL 2.4 系 (nixpkgs と同系統)                              | ✅ bootstrap 成功       | MIT / PD   |
 | `sbcl-2.4.10`    | 2.4.10    | SBCL 2.4.10 (nixpkgs のデフォルトと同版)                    | 定義のみ                | MIT / PD   |
 | `font-hina-mincho` | 1.004   | 古風で可愛い日本語明朝体 (satsuyako 氏)                     | ✅ 成功 (Guix 1.4)      | OFL-1.1    |
-| `font-hina-mincho-mono` | 1.004 | Hina Mincho ターミナル用等幅派生 (ソースからビルド)        | ✅ 成功 (Guix 1.4)      | OFL-1.1    |
+| `font-hina-mincho-mono` | 1.004 | Hina Mincho ターミナル用等幅派生 (上流 TTF を加工)        | ✅ 成功 (Guix 2026)     | OFL-1.1    |
 | `kanata`         | 1.11.0    | 多層キーマップ対応のクロスプラットフォーム キーリマッパ     | crate-inputs 整備済 (下記) | LGPL-3     |
 
 ## セットアップ
@@ -177,48 +177,38 @@ guix import -i rejafdofs/packages/rust-crates.scm crate \
 
 ### font-hina-mincho-mono (`rejafdofs/packages/fonts.scm`)
 
-`font-hina-mincho` と同じ上流コミットから、Glyphs 3 ソース
-`sources/Hina-Mincho.glyphspackage` を **ソースからリビルド** して
-ターミナル表示向けの等幅派生を生成するパッケージです。
+`font-hina-mincho` と同じ上流コミットの **配布済み TTF**
+(`fonts/ttf/Hina-Mincho-Regular.ttf`) を入力に取り、ターミナル表示向け
+の等幅派生を生成するパッケージです。
 
 **ビルドフロー** (`hina-mincho-monospace.py` が一括して実行):
 
-1. `.glyphspackage` (= ディレクトリ形式の Glyphs 3 ソース) を
-   `python-openstep-plist` で読み、`fontinfo.plist` + `glyphs/*.glyph` +
-   `order.plist` を結合して単一の `.glyphs` plist を生成。
-2. `python-glyphslib` で `.glyphs` → designspace + UFO に変換。
-3. `python-ufo2ft` の `compileTTF` で UFO → fontTools.TTFont を生成
-   (= fontmake が内部でやっているのと同じ呼び出し。fontmake パッケージ
-   自体は Guix 1.4 系に無いため不要にしている)。
-4. 各グリフの cmap 逆引きから Unicode East Asian Width を引いて
+1. 上流配布の `Hina-Mincho-Regular.ttf` を `fontTools.ttLib.TTFont`
+   で読み込む。
+2. 各グリフの cmap 逆引きから Unicode East Asian Width を引いて
    advance を半角 (UPM/2=500) / 全角 (UPM=1000) のいずれかに
    丸める。Ambiguous (罫線・記号類) は CJK ロケールのターミナル
    慣例どおり全角扱い。cmap 外グリフ (合字/異体字) は元 advance を
    閾値で丸める fallback。
-5. `post.isFixedPitch=1`, `OS/2.panose.bProportion=9`,
+3. `post.isFixedPitch=1`, `OS/2.panose.bProportion=9`,
    `OS/2.xAvgCharWidth=500` を立てて fontconfig に monospace
    ファミリとして拾わせる。`name` テーブルを
    `Hina Mincho Mono` / `HinaMinchoMono-Regular` に書き換える。
 
 **実装メモ:**
 
-1. **Glyphs 本体 (非自由) は不要**。`.glyphspackage` から
-   `python-fontmake` 相当のパイプライン (`glyphsLib` + `ufo2ft`) を
-   Python から直接駆動している。
-2. **Guix 1.4 系の制約への対応** (詳細はコミットログ参照):
-   - 旧 Guix 1.4 では `python-ufo2ft 2.28.0` が要求する
-     `fontTools.designspaceLib.split` が `python-fonttools 4.28.5`
-     (デフォルト) に無かったため、`python-fonttools-next` (4.37.1)
-     に差し替えた派生を使っていた。**現行 Guix (2025+) では
-     `python-fonttools 4.59+` が標準なので不要**。上流の
-     `python-glyphslib` / `python-ufo2ft` / `python-fonttools` を
-     そのまま `native-inputs` に並べる。
-   - `python-glyphslib 6.0.7` は `.glyphspackage` を直接読めない
-     (6.1+ で対応)。よって 1. の前処理が必要。
-   - `glyphsLib 6.0.7` は `customParameters` の重複 (Glyphs エディタは
-     許容、Hina Mincho では `hheaLineGap` が 350 と 0 で 2 回登録)
-     に対し `RuntimeError` を投げるため、前処理段階で再帰的に
-     name でユニーク化する (Glyphs 同様後勝ち)。
+1. **Glyphs ソース (`.glyphspackage`) からの再ビルドは行わない**。
+   過去のコミットでは `python-glyphslib` + `python-ufo2ft` で
+   `.glyphspackage` → designspace/UFO → TTF のパイプラインを
+   `fontmake` 相当で組んでいたが、Guix 2026 同梱の glyphsLib 6.6.x
+   以降は Hina Mincho の `_part.*` 系スマートコンポーネントの
+   古い軸メタ情報 (未参照の `partsSettings` "new Property" や
+   日付名 backup レイヤ) で `KeyError` / `Locations must be unique.`
+   をバージョン依存に投げて破綻する。outline は上流ビルド済み TTF
+   をそのまま使い、advance とメタデータだけを書き換える方が頑健。
+2. native-inputs は `python-wrapper` と `python-fonttools` のみ。
+   `python-glyphslib` / `python-ufo2ft` / `python-openstep-plist`
+   は不要になった。
 3. ファミリ名を変えてあるため `font-hina-mincho` と同時インストール
    しても名前空間で衝突しません。`fc-match 'Hina Mincho Mono:spacing=mono'`
    で確実に拾えます。
@@ -293,20 +283,13 @@ Guix 2026 (commit `30442f49a581447285bd6f050acec6a9b677f3ad`) 上で確認:
 /gnu/store/rnw5642kygidrfxys2m31ljkr51c726q-ninix-kagari-3.1.1
 ```
 
-Guix 1.4 (substitutes 経由) でも以下を確認:
-
-```
-/gnu/store/764h1sdkf3jf10gna1gnj64vz1shpx09-font-hina-mincho-1.004-0.1bdbf0b
-/gnu/store/rmg4cp0dcrmc9pamysx03xs0g4yn46wy-font-hina-mincho-mono-1.004-0.1bdbf0b
-```
-
 動作確認済み:
 - `nyxt --version` → `Nyxt version 3.11.7`
 - `vrc-get --version` → `vrc-get 1.9.1`
 - `font-hina-mincho` の `share/fonts/truetype/Hina-Mincho-Regular.ttf` が
-  正常に配置されること (TrueType Font data, digitally signed, 16 tables)
-- `font-hina-mincho-mono` の `HinaMinchoMono-Regular.ttf` (5.16 MB,
-  TrueType 15 tables) が出力され、`post.isFixedPitch=1`,
+  正常に配置されること (TrueType Font data, digitally signed, 17 tables)
+- `font-hina-mincho-mono` の `HinaMinchoMono-Regular.ttf` (≒ 6.06 MB,
+  上流 TTF と同じ 17 tables) が出力され、`post.isFixedPitch=1`,
   `OS/2.panose.bProportion=9`, ユニーク advance = `{0, 500, 1000}`,
   EAW Na/H/N グリフが 500 / EAW F/W/A が 1000 になっていること
 
