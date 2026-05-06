@@ -206,12 +206,13 @@ guix import -i rejafdofs/packages/rust-crates.scm crate \
    `python-fontmake` 相当のパイプライン (`glyphsLib` + `ufo2ft`) を
    Python から直接駆動している。
 2. **Guix 1.4 系の制約への対応** (詳細はコミットログ参照):
-   - `python-ufo2ft 2.28.0` が要求する `fontTools.designspaceLib.split`
-     は `python-fonttools 4.28.5` (デフォルト) に無いため、
-     `propagated-inputs` を `modify-inputs` で `python-fonttools-next`
-     (4.37.1) に直接差し替えた派生 (`python-ufo2ft/fonttools-next` 等)
-     を使う。`package-input-rewriting` だと依存グラフ全体を再帰書換
-     して guix プロセスが 16 GB を食って OOM される。
+   - 旧 Guix 1.4 では `python-ufo2ft 2.28.0` が要求する
+     `fontTools.designspaceLib.split` が `python-fonttools 4.28.5`
+     (デフォルト) に無かったため、`python-fonttools-next` (4.37.1)
+     に差し替えた派生を使っていた。**現行 Guix (2025+) では
+     `python-fonttools 4.59+` が標準なので不要**。上流の
+     `python-glyphslib` / `python-ufo2ft` / `python-fonttools` を
+     そのまま `native-inputs` に並べる。
    - `python-glyphslib 6.0.7` は `.glyphspackage` を直接読めない
      (6.1+ で対応)。よって 1. の前処理が必要。
    - `glyphsLib 6.0.7` は `customParameters` の重複 (Glyphs エディタは

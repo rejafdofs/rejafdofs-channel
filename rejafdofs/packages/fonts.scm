@@ -42,26 +42,6 @@
   #:use-module (gnu packages python-xyz)
   #:use-module ((guix licenses) #:prefix license:))
 
-;; Guix 1.4 系の python-glyphslib / python-ufo2ft が伝播する python-fonttools
-;; (4.28.5) には fontTools.designspaceLib.split が無く、ufo2ft の import 時点で
-;; ModuleNotFoundError になる。python-fonttools-next (4.37.1) には存在するため、
-;; 当該 2 パッケージの propagated-inputs だけを直接差し替える
-;; (package-input-rewriting だと依存グラフ全体を再帰書換して
-;;  Guix プロセスが 16 GB クラスのメモリを食って OOM される)。
-(define python-glyphslib/fonttools-next
-  (package
-    (inherit python-glyphslib)
-    (propagated-inputs
-     (modify-inputs (package-propagated-inputs python-glyphslib)
-       (replace "python-fonttools" python-fonttools-next)))))
-
-(define python-ufo2ft/fonttools-next
-  (package
-    (inherit python-ufo2ft)
-    (propagated-inputs
-     (modify-inputs (package-propagated-inputs python-ufo2ft)
-       (replace "python-fonttools" python-fonttools-next)))))
-
 (define-public font-hina-mincho
   (let ((commit "1bdbf0b059c16810db0f71657e1ed4c723a3b139")
         (revision "0"))
@@ -142,13 +122,9 @@ Google Fonts および Adobe Fonts に収録されている。")
                             "AUTHORS.txt" "CONTRIBUTORS.txt"))))))))
     (native-inputs
      (list python-wrapper
-           ;; ※ Guix 1.4 同梱の python-glyphslib / python-ufo2ft は
-           ;; python-fonttools 4.28.5 を伝播し、ufo2ft 2.28.0 が要求する
-           ;; fontTools.designspaceLib.split が存在しない。4.37.1 系
-           ;; (python-fonttools-next) に差し替えた派生を使う。
-           python-glyphslib/fonttools-next
-           python-ufo2ft/fonttools-next
-           python-fonttools-next
+           python-glyphslib
+           python-ufo2ft
+           python-fonttools
            ;; .glyphspackage (= ディレクトリ形式の Glyphs 3 ソース) を
            ;; 単一 .glyphs に結合する前処理で使う。glyphsLib 6.0.7 自体は
            ;; .glyphspackage を直接読めない (6.1+ で対応) ため必須。
