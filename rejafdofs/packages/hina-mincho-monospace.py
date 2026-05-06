@@ -83,6 +83,12 @@ def monospacify(font) -> None:
         new_metrics[name] = (target, lsb)
     hmtx.metrics = new_metrics
 
+    # hhea.advanceWidthMax / minLeftSideBearing / xMaxExtent 等は
+    # hmtx を書き換えただけだと旧値のまま残る。fontTools の compile() は
+    # `glyf` テーブルがロード済みのときにのみ recalc を走らせるため、
+    # ここで明示的にデコンパイルさせて save() 時の recalc を有効化する。
+    font["glyf"]
+
     # name 書き換え。Windows (3,1,0x409) と Mac (1,0,0) の両方に英語名を入れて
     # おけば fc-list / Pango / CoreText いずれも拾える。
     name_tbl = font["name"]
