@@ -29,6 +29,23 @@ FAMILY = "Hina Mincho Mono"
 FULL_NAME = "Hina Mincho Mono Regular"
 POSTSCRIPT_NAME = "HinaMinchoMono-Regular"
 
+# name テーブルのうちフォント名同定に使われる ID と、そこに入れる新しい値。
+#   1, 16, 21      : Family / Preferred Family / WWS Family
+#   4, 18          : Full Name / Mac compatible full
+#   6, 20          : PostScript Name / CID findfont name
+#   3              : Unique font identifier (重複すると OS が同一フォント
+#                    扱いし得るので必ず差し替える)
+NAME_RENAMES = {
+    1: FAMILY,
+    3: POSTSCRIPT_NAME,
+    4: FULL_NAME,
+    6: POSTSCRIPT_NAME,
+    16: FAMILY,
+    18: FULL_NAME,
+    20: POSTSCRIPT_NAME,
+    21: FAMILY,
+}
+
 
 def _build_target_widths(font, half: int, full: int) -> dict:
     """各グリフの target advance を Unicode East Asian Width で決める。
@@ -89,15 +106,21 @@ def monospacify(font) -> None:
     # ここで明示的にデコンパイルさせて save() 時の recalc を有効化する。
     font["glyf"]
 
-    # name 書き換え。Windows (3,1,0x409) と Mac (1,0,0) の両方に英語名を入れて
-    # おけば fc-list / Pango / CoreText いずれも拾える。
+    # name 書き換え。上流 Hina Mincho の TTF には Windows 日本語
+    # (3,1,0x411) や Mac 日本語 (1,1,11) ロケールの name レコードが
+    # "ひな明朝" / "Hina Mincho" として入っている。setName で英語ロケール
+    # だけ差し替えても、ja_JP の fontconfig や日本語 OS の font picker は
+    # 日本語ロケール側の record を優先するので、結果として等幅派生が
+    # 上流と同じ "ひな明朝" 名で見えてしまい区別できない。
+    # 該当 nameID のレコードを (ロケール問わず) 一旦すべて削除してから、
+    # Windows 英語 (3,1,0x409) と Mac Roman (1,0,0) に新しい英語名だけを
+    # 入れ直す。日本語ロケール用の record は意図的に残さない (残すと
+    # その名前が再び表に出てきて元のと衝突するため)。
     name_tbl = font["name"]
-    for name_id, value in (
-        (1, FAMILY),
-        (4, FULL_NAME),
-        (6, POSTSCRIPT_NAME),
-        (16, FAMILY),
-    ):
+    name_tbl.names = [
+        r for r in name_tbl.names if r.nameID not in NAME_RENAMES
+    ]
+    for name_id, value in NAME_RENAMES.items():
         name_tbl.setName(value, name_id, 3, 1, 0x409)
         name_tbl.setName(value, name_id, 1, 0, 0)
 
