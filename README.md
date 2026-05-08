@@ -4,7 +4,8 @@ rejafdofs 個人向け Guix チャンネル。以下のパッケージを提供�
 
 | パッケージ       | バージョン | 説明                                                        | ビルド検証             | ライセンス |
 |------------------|-----------|-------------------------------------------------------------|------------------------|------------|
-| `nyxt`           | 3.11.7    | Common Lisp 製の拡張可能ウェブブラウザ (安定版)             | ✅ 成功 (Guix 2026)    | BSD-3      |
+| `nyxt`           | 4.0.0     | Nyxt 4.0.0 (Electron 版、upstream AppImage 再パッケージ)    | ✅ 成功 (Guix 2026)    | BSD-3      |
+| `nyxt-3`         | 3.11.7    | Nyxt 3.11.7 (WebKitGTK 系 source build / 旧 default)        | ✅ 成功 (Guix 2026)    | BSD-3      |
 | `nyxt-next`      | 3.12.0    | Nyxt 3.12.0 (Nix 準拠、**実験版・現状ビルド失敗**)           | ⚠️ 失敗 (下記)          | BSD-3      |
 | `vrc-get`        | 1.9.1     | VRChat Package Manager (VCC) の OSS CLI                     | ✅ 成功 (Guix 2026)    | MIT        |
 | `ruby-ninix-fmo` | 1.0.2     | ninix-kagari 用 FileMappingObject Ruby gem                  | ✅ 成功                 | MIT        |
@@ -56,14 +57,68 @@ guix build -L . font-hina-mincho-mono
 削除されました (upstream issue `guix/guix#518`)。これが `guix install nyxt`
 が失敗する原因です。
 
-本チャンネルでは 2 つのバリアントを提供します。
+本チャンネルでは 3 つのバリアントを提供します。
 
-#### `nyxt` (3.11.7, 安定版 / 推奨)
+#### `nyxt` (4.0.0, Electron 版 / 現 default)
 
+Nyxt 4.0.0 から WebKitGTK ベース → Electron ベースに大きく移行し、
+Common Lisp の git submodule は 110 個に増え一部 (例 `pcostanza/closer-mop`)
+が dead URL で `git clone --recursive` ができないため source build は
+事実上不可能。代わりに upstream の **公式 Linux AppImage**
+(`Linux-Nyxt-x86_64.tar.gz`) を `trivial-build-system` で再パッケージ化
+します。
+
+レイアウト:
+
+```
+$out/libexec/nyxt/nyxt                ← SBCL --executable t (patchelf 厳禁)
+$out/libexec/nyxt/lib/lib*.so*        ← Lisp 側 dlopen 用 enchant/sqlite/openssl
+$out/libexec/cl-electron/cl-electron-server   ← 内側 AppImage 展開後の Electron 本体
+$out/libexec/cl-electron/{*.pak,locales,resources,...}
+$out/bin/nyxt                         ← Guix glibc ld.so + LD_LIBRARY_PATH wrapper
+$out/bin/cl-electron-server           ← libexec へのシンボリックリンク
+```
+
+**実装メモ:**
+
+1. **`usr/bin/nyxt` には patchelf を当てない**。これは
+   `sb-ext:save-lisp-and-die :executable t` で作られた self-contained image
+   で、末尾に core データを埋め込んでいる。patchelf でセクションオフセット
+   が動くと SBCL ランタイムが embedded core を認識できず、起動時に
+   `fatal error encountered in SBCL: Can't find sbcl.core` で失敗する
+   (本パッケージ初版で踏んだ既知罠)。代わりに Guix の glibc に同梱されて
+   いる `ld-linux-x86-64.so.2` を **明示的に呼び出す bash wrapper** で
+   起動し、`LD_LIBRARY_PATH` で Lisp 側 bundled lib (`libenchant-2`,
+   `libsqlite3`, `libssl`, `libcrypto`, `libfixposix`,
+   `libjitterentropy`) を見せる。
+2. **`usr/bin/cl-electron-server` はそれ自身が AppImage**。FUSE がない
+   Guix builder では `dlopen(): error loading libfuse.so.2` で起動でき
+   ないため、`unsquashfs --offset` で **二段目を展開** して
+   `cl-electron-server` 本体 + `*.pak` / `locales/` / `resources/` /
+   `icudtl.dat` / `libffmpeg.so` などを `$out/libexec/cl-electron/` に
+   置く。本体は普通の Electron バイナリなので patchelf で interpreter と
+   `RPATH=$ORIGIN:$ORIGIN/usr/lib:<system libs>:<glibc>/lib` を設定する
+   (SBCL ではないので OK)。
+3. **Electron の system 依存** (`libgtk-3 libnss3 libdbus-1 libatk-1.0
+   libcups libX11 libXcomposite libXdamage libXrandr libgbm libexpat
+   libxcb libxkbcommon libudev libasound libatspi` 等) を
+   `inputs` に列挙し、その `/lib` を `:` 連結して cl-electron-server の
+   RPATH に焼く。これらは Guix 本家の対応パッケージから供給する。
+4. WebKitGTK 系の workaround (`WEBKIT_DISABLE_COMPOSITING_MODE=1` /
+   `WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1` 等) は Electron 版では
+   不要。renderer は Chromium ベースになっており、3.x 系で踏んだ
+   `cl-cffi-gtk` の GDK enum 型不整合や WebKit network process crash
+   は構造的に発生しない。
+
+#### `nyxt-3` (3.11.7, WebKitGTK 系 / fallback)
+
+旧 `nyxt` (3.11.7) を `nyxt-3` という名前で残置しています。本家 Guix
 削除直前のリビジョン `030bd035ae` に存在した **nyxt 3.11.7 の完全な
-定義をそのまま取り込んで**います。依存する 73 個の sbcl-* / cl-* /
+定義をそのまま取り込んで**おり、依存する 73 個の sbcl-* / cl-* /
 webkitgtk / gst-* 等は現行の本家 Guix に残っているため、追加定義は
-不要で `guix build -L . nyxt` が通ります。
+不要で `guix build -L . nyxt-3` が通ります。Common Lisp ベースの
+本来の Nyxt として動かしたい場合や、Electron 版 `nyxt` (4.0.0) に
+何か問題が出た時の fallback として利用してください。
 
 新しい SBCL (2.5.8+) は未使用レキシカル変数を style-warning で
 報告するようになり、nyxt の `nasdf:fail-on-warnings` がそれを
