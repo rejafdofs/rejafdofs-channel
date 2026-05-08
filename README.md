@@ -194,6 +194,12 @@ guix import -i rejafdofs/packages/rust-crates.scm crate \
    `OS/2.xAvgCharWidth=500` を立てて fontconfig に monospace
    ファミリとして拾わせる。`name` テーブルを
    `Hina Mincho Mono` / `HinaMinchoMono-Regular` に書き換える。
+4. `GPOS` テーブルを丸ごと削除し、`GSUB` の合字 feature
+   (`liga` / `dlig` / `hlig` / `clig`) の `LookupListIndex` を空に
+   する。これらを残すと HarfBuzz/Pango の shaping が
+   `kern` で per-pair に advance を削ったり (実測で A→V が 500→240
+   になる)、`fi` を 1 グリフに統合したりして、せっかく hmtx で
+   半角/全角に丸めた等幅性が崩れる。
 
 **実装メモ:**
 
@@ -219,6 +225,16 @@ guix import -i rejafdofs/packages/rust-crates.scm crate \
 ASCII (' ' 'A' 'a' '0' '~') / Latin extended ('©') / 半角カナ (ｱ) → 500
 全角 Latin (Ａ) / ひらがな (あ) / 漢字 (中, 愛) / カタカナ (ア)   → 1000
 Ambiguous (罫線 ─, em-dash —, ギリシャ α, キリル Ё)              → 1000
+```
+
+shaping 後の advance も `hb-shape` で確認できます (kern / liga が
+無効化されているため、ペアごとに advance が削られない):
+
+```sh
+$ hb-shape "$out/share/fonts/truetype/HinaMinchoMono-Regular.ttf" "AVAVA"
+[A=0+500|V=1+500|A=2+500|V=3+500|A=4+500]
+$ hb-shape "$out/share/fonts/truetype/HinaMinchoMono-Regular.ttf" "office"
+[o=0+500|f=1+500|f=2+500|i=3+500|c=4+500|e=5+500]
 ```
 
 ### kanata (`rejafdofs/packages/kanata.scm`)

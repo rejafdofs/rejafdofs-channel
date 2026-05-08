@@ -11,6 +11,9 @@
   - post.isFixedPitch=1 / OS/2.panose.bProportion=9 /
     OS/2.xAvgCharWidth=半角値 を立て fontconfig に monospace 認識させる
   - name テーブルを `Hina Mincho Mono` に書き換える
+  - GPOS テーブルを削除し、GSUB の合字 feature (liga/dlig/hlig/clig) を
+    無力化する。さもないと HarfBuzz/Pango の shaping が kern で
+    advance を削ったり "fi" を 1 グリフに統合したりして等幅性が崩れる
 
 Glyphs ソース (`.glyphspackage`) からの再ビルド経路は使わない。glyphsLib
 6.1+ が Hina Mincho の `_part.*` 系スマートコンポーネントの古い軸メタ
@@ -28,6 +31,11 @@ from fontTools.ttLib import TTFont
 FAMILY = "Hina Mincho Mono"
 FULL_NAME = "Hina Mincho Mono Regular"
 POSTSCRIPT_NAME = "HinaMinchoMono-Regular"
+
+# GSUB の合字系 feature。これらは複数 codepoint を 1 グリフへ置換する
+# (例: liga "fi" → ffi グリフ) ため、1 セル = 1 codepoint の monospace
+# 約束を破る。FeatureRecord は残し LookupListIndex を空にして無力化する。
+LIGATURE_FEATURES = frozenset({"liga", "dlig", "hlig", "clig"})
 
 # name テーブルのうちフォント名同定に使われる ID と、そこに入れる新しい値。
 #   1, 16, 21      : Family / Preferred Family / WWS Family
@@ -135,6 +143,28 @@ def monospacify(font) -> None:
     font["OS/2"].panose.bProportion = 9
     # OS/2.xAvgCharWidth はターミナルでの 1 セル幅基準。半角に合わせる。
     font["OS/2"].xAvgCharWidth = half
+
+    # hmtx の advance を 500/1000 に丸めただけでは等幅にならない。
+    # 上流 Hina Mincho の TTF は GPOS に `kern` を持っており、HarfBuzz /
+    # Pango がデフォルトで適用するため、shaping 段階でペアごとに advance
+    # が削られる (実測: A→V で 500 → 240)。`mark` / `mkmk` もターミナル
+    # では combining 文字の正確配置より「1 セル = 1 グリフ」の方が
+    # 重要なので、GPOS テーブルを丸ごと削除する。Source Han Mono など
+    # 他の CJK monospace 派生も GPOS を持たないか kern を含まない。
+    if "GPOS" in font:
+        del font["GPOS"]
+
+    # GSUB の合字系 feature は "fi" → 1 グリフ等で複数 codepoint を
+    # 単一グリフに統合してしまう。LangSys.FeatureIndex を再番号付け
+    # しなくて済むよう、FeatureRecord は残したまま LookupListIndex を
+    # 空にして無効化する。`vert` / `vrt2` (縦書き専用) や `hwid` / `fwid`
+    # (ユーザ起動の半角/全角形)、`ccmp` / `locl` (combining 文字の合成)
+    # は横書きで悪影響しない or むしろ必要なので残す。
+    if "GSUB" in font:
+        for fr in font["GSUB"].table.FeatureList.FeatureRecord:
+            if fr.FeatureTag in LIGATURE_FEATURES:
+                fr.Feature.LookupListIndex = []
+                fr.Feature.LookupCount = 0
 
 
 def main(src_path: str, dst_path: str) -> None:
