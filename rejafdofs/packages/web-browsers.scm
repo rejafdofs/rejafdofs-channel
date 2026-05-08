@@ -78,16 +78,28 @@
 ;;; upstream が公式に配布する self-contained AppImage を抽出して
 ;;; Guix store にインストールする方式を採る。
 ;;;
-;;; AppImage 内の構造:
-;;;   AppRun
-;;;   nyxt.desktop / nyxt.png
-;;;   usr/bin/nyxt              (Lisp side, ~110MB)
-;;;   usr/bin/cl-electron-server (Electron renderer, ~102MB)
-;;;   usr/lib/lib*.so           (bundled openssl/sqlite/enchant 等)
+;;; tarball 内構造 (Linux-Nyxt-x86_64.tar.gz):
+;;;   Nyxt-x86_64.AppImage   ← 外側 AppImage (offset = --appimage-offset)
+;;;     └── usr/bin/nyxt              SBCL --executable t (~106MB)
+;;;     └── usr/bin/cl-electron-server さらに AppImage (~115MB)  ← 内側
+;;;     └── usr/lib/libenchant-2 / libsqlite3 / libssl / libcrypto / libfixposix / libjitterentropy
+;;;     └── nyxt.desktop / nyxt.png
 ;;;
-;;; 依存は libc/libm/libdl/libpthread/libz のみ (glibc + zlib) なので
-;;; patchelf で interpreter を Guix の glibc に向けて RPATH を
-;;; 設定すれば動く。
+;;; 注意点:
+;;;
+;;; * usr/bin/nyxt は SBCL の `save-lisp-and-die :executable t` で作られた
+;;;   self-contained image で、末尾に core データを埋め込んでいる。
+;;;   patchelf でセクションを動かすと SBCL ランタイムが embedded core を
+;;;   見つけられず "Can't find sbcl.core" で fatal error。
+;;;   → このバイナリには patchelf を当てない。
+;;;     代わりに Guix glibc の ld.so を **明示的に指定** して呼び出す
+;;;     wrapper script で起動する。
+;;;
+;;; * usr/bin/cl-electron-server はそれ自体が AppImage (FUSE 必須)。
+;;;   Guix では FUSE 前提を避けたいので二段目の unsquashfs で展開する。
+;;;   展開後の cl-electron-server は普通の Electron バイナリなので
+;;;   patchelf で interpreter と RPATH ($ORIGIN + システム lib) を
+;;;   設定して使う。
 
 (define-public nyxt
   (package
@@ -125,13 +137,56 @@
                                              "patchelf")
                                           "/bin/patchelf"))
                  (glibc    #$(this-package-input "glibc"))
-                 (zlib     #$(this-package-input "zlib"))
+                 (bash     (string-append #$(this-package-input "bash-minimal")
+                                          "/bin/bash"))
                  (loader   (string-append glibc "/lib/ld-linux-x86-64.so.2"))
-                 (work     (string-append (getcwd) "/work")))
+                 ;; cl-electron-server (Electron / Chromium) が NEEDED とする
+                 ;; system libs を `:` 連結。`readelf -d` で抽出した結果を
+                 ;; 元に Guix store path を組み立てる。
+                 (electron-system-libs
+                  (string-join
+                   (list #$(file-append (this-package-input "gtk+") "/lib")
+                         #$(file-append (this-package-input "glib") "/lib")
+                         #$(file-append (this-package-input "nss") "/lib/nss")
+                         #$(file-append (this-package-input "nss") "/lib")
+                         #$(file-append (this-package-input "nspr") "/lib")
+                         #$(file-append (this-package-input "dbus") "/lib")
+                         #$(file-append (this-package-input "atk") "/lib")
+                         #$(file-append (this-package-input "at-spi2-core") "/lib")
+                         #$(file-append (this-package-input "at-spi2-atk") "/lib")
+                         #$(file-append (this-package-input "cups") "/lib")
+                         #$(file-append (this-package-input "pango") "/lib")
+                         #$(file-append (this-package-input "cairo") "/lib")
+                         #$(file-append (this-package-input "libx11") "/lib")
+                         #$(file-append (this-package-input "libxcomposite") "/lib")
+                         #$(file-append (this-package-input "libxdamage") "/lib")
+                         #$(file-append (this-package-input "libxext") "/lib")
+                         #$(file-append (this-package-input "libxfixes") "/lib")
+                         #$(file-append (this-package-input "libxrandr") "/lib")
+                         #$(file-append (this-package-input "libxtst") "/lib")
+                         #$(file-append (this-package-input "libxscrnsaver") "/lib")
+                         #$(file-append (this-package-input "libxcb") "/lib")
+                         #$(file-append (this-package-input "libxkbcommon") "/lib")
+                         #$(file-append (this-package-input "mesa") "/lib")
+                         #$(file-append (this-package-input "expat") "/lib")
+                         #$(file-append (this-package-input "eudev") "/lib")
+                         #$(file-append (this-package-input "alsa-lib") "/lib")
+                         #$(file-append (this-package-input "libnotify") "/lib"))
+                   ":"))
+                 (work             (string-append (getcwd) "/work"))
+                 (libexec-nyxt     (string-append out "/libexec/nyxt"))
+                 (libexec-electron (string-append out "/libexec/cl-electron"))
+                 ;; helper: cmd を popen で実行し stdout 一行を返す
+                 (read-cmd-line
+                  (lambda (cmd)
+                    (let* ((port (open-input-pipe cmd))
+                           (line (read-line port)))
+                      (close-pipe port)
+                      line))))
             (mkdir-p work)
-            ;; 1. tar.gz の中身は AppImage 1 file。upstream の tarball は
-            ;;    "extra field encrypted" 拡張で tar -xzf が直接通らない
-            ;;    ため、source を work にコピーして gunzip でインプレース
+
+            ;; 1. tar.gz 展開。upstream の tarball は "extra field encrypted"
+            ;;    拡張で tar -xzf が直接通らないため、gunzip でインプレース
             ;;    展開してから tar -xf で解く。
             (let ((local (string-append work "/Linux-Nyxt-x86_64.tar.gz")))
               (copy-file #$source local)
@@ -140,60 +195,113 @@
               (invoke tar "-xf" (string-append work "/Linux-Nyxt-x86_64.tar")
                       "-C" work)
               (delete-file (string-append work "/Linux-Nyxt-x86_64.tar")))
-            ;; 2. AppImage 内の squashfs を抽出。offset は AppImage runtime
-            ;;    が --appimage-offset で出してくれるのでそれを取得。
-            (let* ((appimage (string-append work "/Nyxt-x86_64.AppImage")))
+
+            ;; 2. 外側 AppImage (Nyxt-x86_64.AppImage) を unsquashfs で展開
+            (let ((appimage (string-append work "/Nyxt-x86_64.AppImage")))
               (chmod appimage #o755)
-              (let* ((port (open-input-pipe
-                            (string-append appimage " --appimage-offset")))
-                     (offset (read-line port)))
-                (close-pipe port)
+              (let ((offset (read-cmd-line
+                             (string-append appimage " --appimage-offset"))))
                 (invoke squash "-d" (string-append work "/sq")
-                        "-no-progress" "-quiet" "-offset" offset
-                        appimage)))
-            ;; (注: 実際の offset は AppImage runtime の version で異なる
-            ;; ので、自動検出版は build-finalize で対応)
-            (let* ((src (string-append work "/sq")))
-              ;; 3. インストールレイアウトを構築
+                        "-no-progress" "-quiet" "-offset" offset appimage)))
+
+            (let ((src (string-append work "/sq")))
+              ;; 3. 内側 cl-electron-server (こちらも AppImage) を展開。
+              ;;    展開先 work/sq2/ には Electron 本体 cl-electron-server と
+              ;;    .pak / locales/ / resources/ / icudtl.dat / snapshot_blob.bin /
+              ;;    libEGL.so / libGLESv2.so / libffmpeg.so / libvulkan.so.1 等が並ぶ。
+              (let ((inner (string-append src "/usr/bin/cl-electron-server")))
+                (chmod inner #o755)
+                (let ((offset (read-cmd-line
+                               (string-append inner " --appimage-offset"))))
+                  (invoke squash "-d" (string-append work "/sq2")
+                          "-no-progress" "-quiet" "-offset" offset inner)))
+
+              ;; 4. インストールレイアウト構築
+              (mkdir-p libexec-nyxt)
+              (mkdir-p (string-append libexec-nyxt "/lib"))
+              (mkdir-p libexec-electron)
               (mkdir-p (string-append out "/bin"))
-              (mkdir-p (string-append out "/lib"))
               (mkdir-p (string-append out "/share/applications"))
               (mkdir-p (string-append out "/share/icons/hicolor/512x512/apps"))
+
+              ;; nyxt 本体: 絶対に patchelf しない (SBCL embedded core が破壊される)
               (copy-file (string-append src "/usr/bin/nyxt")
-                         (string-append out "/bin/nyxt"))
-              (copy-file (string-append src "/usr/bin/cl-electron-server")
-                         (string-append out "/bin/cl-electron-server"))
-              (chmod (string-append out "/bin/nyxt") #o755)
-              (chmod (string-append out "/bin/cl-electron-server") #o755)
-              ;; bundled libs
+                         (string-append libexec-nyxt "/nyxt"))
+              (chmod (string-append libexec-nyxt "/nyxt") #o755)
+
+              ;; nyxt が dlopen する Lisp 側 bundled libs:
+              ;; libenchant-2 / libsqlite3 / libssl / libcrypto / libfixposix /
+              ;; libjitterentropy など。LD_LIBRARY_PATH 経由で見せる。
               (for-each
                (lambda (lib)
-                 (copy-file lib
-                            (string-append out "/lib/"
-                                           (basename lib))))
+                 (copy-file lib (string-append libexec-nyxt "/lib/"
+                                                (basename lib))))
                (find-files (string-append src "/usr/lib")
                            "\\.so(\\.[0-9]+)*$"))
-              ;; desktop / icon
+
+              ;; cl-electron-server ディレクトリは丸ごと libexec/cl-electron/
+              ;; に置く。Electron は argv[0] からの相対パスで .pak / locales /
+              ;; resources を探すのでバイナリと resources を同一ディレクトリに
+              ;; 維持する必要がある。
+              (copy-recursively (string-append work "/sq2") libexec-electron)
+
+              ;; cl-electron-server バイナリは普通の Electron なので patchelf
+              ;; で interpreter と RPATH を設定する (SBCL ではないので安全)。
+              ;; RPATH は $ORIGIN (=同梱 lib*.so) + $ORIGIN/usr/lib (=libXss 等)
+              ;; + Guix store の system libs (gtk+/nss/dbus/...) + glibc/lib。
+              (let* ((electron-bin (string-append libexec-electron
+                                                  "/cl-electron-server"))
+                     (crashpad    (string-append libexec-electron
+                                                 "/chrome_crashpad_handler"))
+                     (rpath (string-join
+                             (list "$ORIGIN"
+                                   "$ORIGIN/usr/lib"
+                                   electron-system-libs
+                                   (string-append glibc "/lib"))
+                             ":")))
+                (chmod electron-bin #o755)
+                (invoke patchelf "--set-interpreter" loader electron-bin)
+                (invoke patchelf "--set-rpath" rpath electron-bin)
+                (when (file-exists? crashpad)
+                  (chmod crashpad #o755)
+                  (invoke patchelf "--set-interpreter" loader crashpad)
+                  (invoke patchelf "--set-rpath" rpath crashpad)))
+
+              ;; 5. wrapper script: $out/bin/nyxt
+              ;;    - LD_LIBRARY_PATH に Lisp 側 bundled lib を追加
+              ;;    - PATH に $out/bin を追加 (cl-electron-server を発見可能にする)
+              ;;    - Guix glibc ld.so を **明示** 呼び出しでバイナリを起動
+              ;;      (バイナリ自身は patchelf しない)
+              (let* ((wrapper (string-append out "/bin/nyxt"))
+                     (script
+                      (string-append
+                       "#!" bash "\n"
+                       "export LD_LIBRARY_PATH=\"" libexec-nyxt
+                       "/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}\"\n"
+                       "export PATH=\"" out "/bin:$PATH\"\n"
+                       "exec \"" loader "\" \"" libexec-nyxt
+                       "/nyxt\" \"$@\"\n")))
+                (call-with-output-file wrapper
+                  (lambda (port) (display script port)))
+                (chmod wrapper #o755))
+
+              ;; 6. cl-electron-server は libexec の本体に symlink で見せる。
+              ;;    シンボリックリンク経由で exec しても kernel はシンボリック
+              ;;    リンクを解決してターゲットを load し、$ORIGIN は
+              ;;    libexec-electron に解決される (RPATH の $ORIGIN は実バイナリ
+              ;;    の所在を指す)。
+              (symlink (string-append libexec-electron "/cl-electron-server")
+                       (string-append out "/bin/cl-electron-server"))
+
+              ;; 7. desktop / icon
               (when (file-exists? (string-append src "/nyxt.desktop"))
                 (copy-file (string-append src "/nyxt.desktop")
-                           (string-append out "/share/applications/nyxt.desktop")))
+                           (string-append out
+                                          "/share/applications/nyxt.desktop")))
               (when (file-exists? (string-append src "/nyxt.png"))
                 (copy-file (string-append src "/nyxt.png")
                            (string-append out
                                           "/share/icons/hicolor/512x512/apps/nyxt.png")))
-              ;; 4. patchelf — interpreter を Guix の ld.so に、RPATH に
-              ;;    glibc/lib + zlib/lib + 同梱 lib を入れる
-              (let ((rpath (string-join
-                            (list (string-append glibc "/lib")
-                                  (string-append zlib "/lib")
-                                  (string-append out "/lib"))
-                            ":")))
-                (for-each
-                 (lambda (bin)
-                   (invoke patchelf "--set-interpreter" loader bin)
-                   (invoke patchelf "--set-rpath" rpath bin))
-                 (list (string-append out "/bin/nyxt")
-                       (string-append out "/bin/cl-electron-server"))))
               #t)))))
     (native-inputs
      (list (specification->package "tar")
@@ -202,7 +310,35 @@
            (specification->package "patchelf")))
     (inputs
      (list (specification->package "glibc")
-           (specification->package "zlib")))
+           (specification->package "bash-minimal")
+           ;; cl-electron-server (Electron) の動作に必要な system libs。
+           ;; readelf -d cl-electron-server の NEEDED リストを元にしている。
+           (specification->package "gtk+")
+           (specification->package "glib")
+           (specification->package "nss")
+           (specification->package "nspr")
+           (specification->package "dbus")
+           (specification->package "atk")
+           (specification->package "at-spi2-core")
+           (specification->package "at-spi2-atk")
+           (specification->package "cups")
+           (specification->package "pango")
+           (specification->package "cairo")
+           (specification->package "libx11")
+           (specification->package "libxcomposite")
+           (specification->package "libxdamage")
+           (specification->package "libxext")
+           (specification->package "libxfixes")
+           (specification->package "libxrandr")
+           (specification->package "libxtst")
+           (specification->package "libxscrnsaver")
+           (specification->package "libxcb")
+           (specification->package "libxkbcommon")
+           (specification->package "mesa")
+           (specification->package "expat")
+           (specification->package "eudev")
+           (specification->package "alsa-lib")
+           (specification->package "libnotify")))
     (synopsis "Nyxt 4.0.0 (Electron 版、upstream AppImage 再パッケージ)")
     (home-page "https://nyxt-browser.com/")
     (description "Nyxt is a keyboard-oriented, extensible web-browser designed
